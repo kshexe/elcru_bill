@@ -14,6 +14,7 @@ import logging
 from homeassistant.components.text import TextEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
@@ -44,6 +45,7 @@ class VnrisaLinkText(TextEntity, RestoreEntity):
     _attr_icon = "mdi:link-variant"
     _attr_native_min = 0
     _attr_native_max = 255
+    _attr_entity_category = EntityCategory.CONFIG
 
     def __init__(self, entry: VnrisaConfigEntry) -> None:
         self._entry = entry
