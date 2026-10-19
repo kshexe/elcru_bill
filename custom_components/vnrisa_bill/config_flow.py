@@ -222,6 +222,10 @@ class VnrisaOptionsFlow(OptionsFlow):
                         CONF_GAS_MEMBER_PWD: member_pwd,
                     },
                 )
+                # entry.data만 바꾸면(옵션이 아니라) update_listener가 안 불려서 다음
+                # 재시작 전까진 새 로그인 정보가 실제로 쓰이지 않는다 - 바로 반영되게
+                # 명시적으로 reload.
+                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
                 return self.async_create_entry(data=dict(self.config_entry.options))
 
         return self.async_show_form(
@@ -280,6 +284,10 @@ class VnrisaOptionsFlow(OptionsFlow):
                             "kocom_original_username": kocom_username,
                         },
                     )
+                    # IP/비밀번호는 다음 폴링 때 entry.data를 다시 읽어 바로 반영되지만,
+                    # 조회 주기는 코디네이터 생성 시 한 번만 읽혀서 reload 없인 다음
+                    # 재시작 전까지 안 바뀐다 - 명시적으로 reload.
+                    self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
                     return self.async_create_entry(data=dict(self.config_entry.options))
                 errors["base"] = "auth_error"
 
