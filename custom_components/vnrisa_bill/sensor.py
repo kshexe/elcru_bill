@@ -54,8 +54,8 @@ async def async_setup_entry(
     runtime = entry.runtime_data
     runtime.add_sensor_entities = async_add_entities
 
-    runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회 시각 (vnrisa)", "bill_timestamp")
-    runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회 시각 (GSE)", "gas_timestamp")
+    runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각 (vnrisa)", "bill_timestamp")
+    runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각 (GSE)", "gas_timestamp")
     async_add_entities([runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor])
 
     await async_setup_kocom_entry(hass, entry, async_add_entities)
@@ -209,8 +209,8 @@ def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> No
 
 
 class VnrisaTimestampSensor(RestoreEntity, SensorEntity):
-    """코콤의 '코콤 에너지 응답시각'처럼, vnrisa 관리비/GSE 가스도 마지막으로 성공한
-    조회 시각을 볼 수 있게 - 조회가 조용히 하루 종일 실패하고 있어도 바로 알아챌 수
+    """코콤의 '코콤 에너지 조회시각'처럼, vnrisa 관리비/GSE 가스도 마지막으로 성공한
+    조회시각을 볼 수 있게 - 조회가 조용히 하루 종일 실패하고 있어도 바로 알아챌 수
     있다."""
 
     _attr_has_entity_name = True
