@@ -46,6 +46,19 @@ GAS_SCHEMA = vol.Schema(
 )
 
 
+async def _lookup_kocom_ip(username: str) -> str:
+    """코콤 아이디로 단지 월패드 서버 IP를 조회한다(kocom_energy 원본과 동일한 방식) -
+    설정 최초 단계와 옵션에서 로그인을 다시 할 때 둘 다 쓴다."""
+    async with aiohttp.ClientSession() as session, async_timeout.timeout(10):
+        resp = await session.get(f"http://221.141.3.28/SvrInfo.php?uid={username}")
+        resp.raise_for_status()
+        response_text = await resp.text()
+    ip_match = re.search(r"3 => ([\d.]+)", response_text)
+    if not ip_match:
+        raise IpAddressNotFoundError("IP address not found in the response")
+    return ip_match.group(1)
+
+
 class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
@@ -81,16 +94,7 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
         if user_input is not None:
             self._kocom_username = user_input[CONF_KOCOM_USERNAME].strip()
             try:
-                async with aiohttp.ClientSession() as session, async_timeout.timeout(10):
-                    resp = await session.get(
-                        f"http://221.141.3.28/SvrInfo.php?uid={self._kocom_username}"
-                    )
-                    resp.raise_for_status()
-                    response_text = await resp.text()
-                ip_match = re.search(r"3 => ([\d.]+)", response_text)
-                if not ip_match:
-                    raise IpAddressNotFoundError("IP address not found in the response")
-                self._kocom_ip = ip_match.group(1)
+                self._kocom_ip = await _lookup_kocom_ip(self._kocom_username)
                 return await self.async_step_kocom_account()
             except aiohttp.ClientError:
                 errors["base"] = "cannot_connect"
@@ -236,50 +240,54 @@ class VnrisaOptionsFlow(OptionsFlow):
         )
 
     async def async_step_kocom_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """코콤 비밀번호가 바뀌었을 때 등 - IP/아이디/비밀번호 전부 다시 입력받아
-        인증 검증 후 entry.data를 갈아치운다."""
+        """코콤 비밀번호가 바뀌었을 때 등 - 최초 설정 때처럼 아이디/비밀번호만 받고,
+        IP는 입력칸 없이 아이디로 자동 조회해서 인증 검증 후 entry.data를 갈아치운다."""
         errors: dict[str, str] = {}
         if user_input is not None:
-            ip = user_input[CONF_KOCOM_IP]
             kocom_username = user_input[CONF_KOCOM_USERNAME]
             kocom_password = user_input[CONF_KOCOM_PASSWORD]
             update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
 
-            hashed_username = string_to_padded_hex(md5_hashing(kocom_username), 80)
-            hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
-            fcm = string_to_padded_hex("", 512)
-            phone = string_to_padded_hex("", 32)
-
-            api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
             try:
-                authenticated = await api.authenticate()
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
-                authenticated = False
+                ip = await _lookup_kocom_ip(kocom_username)
+            except (aiohttp.ClientError, TimeoutError, IpAddressNotFoundError) as err:
+                _LOGGER.warning("코콤 서버 IP 조회 실패: %s", err)
+                errors["base"] = "ip_not_found"
+            else:
+                hashed_username = string_to_padded_hex(md5_hashing(kocom_username), 80)
+                hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
+                fcm = string_to_padded_hex("", 512)
+                phone = string_to_padded_hex("", 32)
 
-            if authenticated:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        **self.config_entry.data,
-                        CONF_KOCOM_IP: ip,
-                        CONF_KOCOM_USERNAME: hashed_username,
-                        CONF_KOCOM_PASSWORD: hashed_password,
-                        "kocom_fcm": fcm,
-                        "kocom_phone": phone,
-                        CONF_KOCOM_UPDATE_INTERVAL: update_interval,
-                        "kocom_original_username": kocom_username,
-                    },
-                )
-                return self.async_create_entry(data=dict(self.config_entry.options))
-            errors["base"] = "auth_error"
+                api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
+                try:
+                    authenticated = await api.authenticate()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
+                    authenticated = False
+
+                if authenticated:
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data={
+                            **self.config_entry.data,
+                            CONF_KOCOM_IP: ip,
+                            CONF_KOCOM_USERNAME: hashed_username,
+                            CONF_KOCOM_PASSWORD: hashed_password,
+                            "kocom_fcm": fcm,
+                            "kocom_phone": phone,
+                            CONF_KOCOM_UPDATE_INTERVAL: update_interval,
+                            "kocom_original_username": kocom_username,
+                        },
+                    )
+                    return self.async_create_entry(data=dict(self.config_entry.options))
+                errors["base"] = "auth_error"
 
         data = self.config_entry.data
         return self.async_show_form(
             step_id="kocom_login",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_KOCOM_IP, default=data.get(CONF_KOCOM_IP, "")): str,
                     vol.Required(
                         CONF_KOCOM_USERNAME, default=data.get("kocom_original_username", "")
                     ): str,

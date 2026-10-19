@@ -64,9 +64,8 @@
       },
       "kocom_login": {
         "title": "Kocom Energy login",
-        "description": "Re-enter this if your Kocom password changed - it will be re-verified on save.",
+        "description": "Re-enter this if your Kocom password changed - the server address will be looked up again and re-verified on save.",
         "data": {
-          "kocom_ip": "Wall-pad server IP",
           "kocom_username": "Kocom ID",
           "kocom_password": "Kocom password",
           "kocom_update_interval": "Poll interval (seconds)"
@@ -77,6 +76,7 @@
       "invalid_time": "Time must be in HH:MM format.",
       "invalid_auth": "Invalid ID or password.",
       "cannot_connect": "Could not connect to the server.",
+      "ip_not_found": "Could not find the complex server address for this Kocom ID.",
       "auth_error": "Kocom login failed."
     }
   }
