@@ -1,0 +1,42 @@
+{
+  "config": {
+    "step": {
+      "user": {
+        "title": "아파트 스마트 고지서",
+        "description": "고지서 링크(URL) 전체 또는 RoomKey 숫자를 입력하세요.",
+        "data": {
+          "room_key": "고지서 URL 또는 RoomKey",
+          "check_time": "매일 확인 시각 (HH:MM)"
+        }
+      }
+    },
+    "error": {
+      "invalid_room_key": "URL에서 RoomKey를 찾지 못했습니다.",
+      "invalid_time": "시각은 HH:MM 형식이어야 합니다.",
+      "cannot_connect": "고지서 서버에 연결하지 못했습니다.",
+      "parse_failed": "고지서 내용을 해석하지 못했습니다."
+    },
+    "abort": {
+      "already_configured": "이미 등록된 호실입니다."
+    }
+  },
+  "options": {
+    "step": {
+      "init": {
+        "title": "확인 시각",
+        "data": {
+          "check_time": "매일 확인 시각 (HH:MM)"
+        }
+      }
+    },
+    "error": {
+      "invalid_time": "시각은 HH:MM 형식이어야 합니다."
+    }
+  },
+  "services": {
+    "refresh": {
+      "name": "고지서 즉시 조회",
+      "description": "예약 시간과 관계없이 지금 고지서를 다시 조회합니다."
+    }
+  }
+}

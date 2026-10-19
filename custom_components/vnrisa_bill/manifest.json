@@ -1,0 +1,16 @@
+{
+  "domain": "vnrisa_bill",
+  "name": "아파트 스마트 고지서 (vnrisa)",
+  "codeowners": [],
+  "config_flow": true,
+  "dependencies": [
+    "recorder"
+  ],
+  "documentation": "https://github.com/kshexe/vnrisa_bill",
+  "iot_class": "cloud_polling",
+  "issue_tracker": "https://github.com/kshexe/vnrisa_bill/issues",
+  "requirements": [
+    "beautifulsoup4>=4.12"
+  ],
+  "version": "1.0.0"
+}
