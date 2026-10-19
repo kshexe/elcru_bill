@@ -169,16 +169,128 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
 
 
 class VnrisaOptionsFlow(OptionsFlow):
+    """설치 이후 아이디/비밀번호가 바뀌면(비밀번호 변경 등) 통합을 통째로 삭제하고
+    다시 추가할 필요 없이, 옵션에서 바로 재입력/재검증할 수 있게 메뉴로 나눈다."""
+
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        return self.async_show_menu(
+            step_id="init",
+            menu_options=["schedule", "gas_login", "kocom_login"],
+        )
+
+    async def async_step_schedule(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
         current = self.config_entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
         if user_input is not None:
             check_time = user_input[CONF_GAS_CHECK_TIME].strip()
             if _TIME_RE.match(check_time):
-                return self.async_create_entry(data={CONF_GAS_CHECK_TIME: check_time})
+                return self.async_create_entry(
+                    data={**self.config_entry.options, CONF_GAS_CHECK_TIME: check_time}
+                )
             errors[CONF_GAS_CHECK_TIME] = "invalid_time"
         return self.async_show_form(
-            step_id="init",
+            step_id="schedule",
             data_schema=vol.Schema({vol.Required(CONF_GAS_CHECK_TIME, default=current): str}),
+            errors=errors,
+        )
+
+    async def async_step_gas_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """도시가스 비밀번호가 바뀌었을 때 등 - 로그인 검증까지 하고 entry.data를
+        갈아치운다(옵션이 아니라 로그인 정보라 entry.data 쪽)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            member_id = user_input[CONF_GAS_MEMBER_ID].strip()
+            member_pwd = user_input[CONF_GAS_MEMBER_PWD]
+            try:
+                await fetch_gas_history(member_id, member_pwd, months_back=1)
+            except GasLoginError as err:
+                _LOGGER.warning("가스 로그인 검증 실패: %s", err)
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("가스 로그인 검증 중 알 수 없는 오류")
+                errors["base"] = "cannot_connect"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        **self.config_entry.data,
+                        CONF_GAS_MEMBER_ID: member_id,
+                        CONF_GAS_MEMBER_PWD: member_pwd,
+                    },
+                )
+                return self.async_create_entry(data=dict(self.config_entry.options))
+
+        return self.async_show_form(
+            step_id="gas_login",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_GAS_MEMBER_ID, default=self.config_entry.data.get(CONF_GAS_MEMBER_ID, "")
+                    ): str,
+                    vol.Required(CONF_GAS_MEMBER_PWD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_kocom_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """코콤 비밀번호가 바뀌었을 때 등 - IP/아이디/비밀번호 전부 다시 입력받아
+        인증 검증 후 entry.data를 갈아치운다."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ip = user_input[CONF_KOCOM_IP]
+            kocom_username = user_input[CONF_KOCOM_USERNAME]
+            kocom_password = user_input[CONF_KOCOM_PASSWORD]
+            update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
+
+            hashed_username = string_to_padded_hex(md5_hashing(kocom_username), 80)
+            hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
+            fcm = string_to_padded_hex("", 512)
+            phone = string_to_padded_hex("", 32)
+
+            api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
+            try:
+                authenticated = await api.authenticate()
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
+                authenticated = False
+
+            if authenticated:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        **self.config_entry.data,
+                        CONF_KOCOM_IP: ip,
+                        CONF_KOCOM_USERNAME: hashed_username,
+                        CONF_KOCOM_PASSWORD: hashed_password,
+                        "kocom_fcm": fcm,
+                        "kocom_phone": phone,
+                        CONF_KOCOM_UPDATE_INTERVAL: update_interval,
+                        "kocom_original_username": kocom_username,
+                    },
+                )
+                return self.async_create_entry(data=dict(self.config_entry.options))
+            errors["base"] = "auth_error"
+
+        data = self.config_entry.data
+        return self.async_show_form(
+            step_id="kocom_login",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(CONF_KOCOM_IP, default=data.get(CONF_KOCOM_IP, "")): str,
+                    vol.Required(
+                        CONF_KOCOM_USERNAME, default=data.get("kocom_original_username", "")
+                    ): str,
+                    vol.Required(CONF_KOCOM_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
+                    vol.Required(
+                        CONF_KOCOM_UPDATE_INTERVAL,
+                        default=data.get(CONF_KOCOM_UPDATE_INTERVAL, DEFAULT_KOCOM_UPDATE_INTERVAL),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                }
+            ),
             errors=errors,
         )

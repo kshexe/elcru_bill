@@ -41,14 +41,43 @@
   "options": {
     "step": {
       "init": {
+        "title": "엘크루 공과금 설정",
+        "menu_options": {
+          "schedule": "도시가스 확인 시각",
+          "gas_login": "도시가스 로그인",
+          "kocom_login": "코콤 에너지 로그인"
+        }
+      },
+      "schedule": {
         "title": "가스 확인 시각",
         "data": {
           "gas_check_time": "매일 확인 시각 (HH:MM)"
         }
+      },
+      "gas_login": {
+        "title": "도시가스 로그인",
+        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다.",
+        "data": {
+          "gas_member_id": "가스 아이디",
+          "gas_member_pwd": "가스 비밀번호"
+        }
+      },
+      "kocom_login": {
+        "title": "코콤 에너지 로그인",
+        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 인증 검증까지 다시 합니다.",
+        "data": {
+          "kocom_ip": "월패드 서버 IP",
+          "kocom_username": "코콤 아이디",
+          "kocom_password": "코콤 비밀번호",
+          "kocom_update_interval": "조회 주기 (초)"
+        }
       }
     },
     "error": {
-      "invalid_time": "시각은 HH:MM 형식이어야 합니다."
+      "invalid_time": "시각은 HH:MM 형식이어야 합니다.",
+      "invalid_auth": "아이디 또는 비밀번호가 올바르지 않습니다.",
+      "cannot_connect": "서버에 연결하지 못했습니다.",
+      "auth_error": "코콤 로그인에 실패했습니다."
     }
   }
 }

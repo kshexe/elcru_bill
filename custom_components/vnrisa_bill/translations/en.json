@@ -41,14 +41,43 @@
   "options": {
     "step": {
       "init": {
+        "title": "Elkeuru Utility Bills settings",
+        "menu_options": {
+          "schedule": "Gas check time",
+          "gas_login": "Gas login",
+          "kocom_login": "Kocom Energy login"
+        }
+      },
+      "schedule": {
         "title": "Gas check time",
         "data": {
           "gas_check_time": "Daily check time (HH:MM)"
         }
+      },
+      "gas_login": {
+        "title": "Gas login",
+        "description": "Re-enter this if your gas account password changed - it will be re-verified on save.",
+        "data": {
+          "gas_member_id": "Gas account ID",
+          "gas_member_pwd": "Gas account password"
+        }
+      },
+      "kocom_login": {
+        "title": "Kocom Energy login",
+        "description": "Re-enter this if your Kocom password changed - it will be re-verified on save.",
+        "data": {
+          "kocom_ip": "Wall-pad server IP",
+          "kocom_username": "Kocom ID",
+          "kocom_password": "Kocom password",
+          "kocom_update_interval": "Poll interval (seconds)"
+        }
       }
     },
     "error": {
-      "invalid_time": "Time must be in HH:MM format."
+      "invalid_time": "Time must be in HH:MM format.",
+      "invalid_auth": "Invalid ID or password.",
+      "cannot_connect": "Could not connect to the server.",
+      "auth_error": "Kocom login failed."
     }
   }
 }
