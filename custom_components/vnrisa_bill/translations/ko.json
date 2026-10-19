@@ -14,7 +14,7 @@
       "invalid_room_key": "URL에서 RoomKey를 찾지 못했습니다.",
       "invalid_time": "시각은 HH:MM 형식이어야 합니다.",
       "cannot_connect": "고지서 서버에 연결하지 못했습니다.",
-      "parse_failed": "고지서 내용을 해석하지 못했습니다."
+      "parse_failed": "고지서 내용을 해석하지 못했습니다. 설정 → 시스템 → 로그에서 vnrisa_bill 경고를 확인해 주세요."
     },
     "abort": {
       "already_configured": "이미 등록된 호실입니다."

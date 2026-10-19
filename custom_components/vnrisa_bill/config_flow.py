@@ -41,7 +41,7 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
                 except Exception:  # noqa: BLE001
                     errors["base"] = "cannot_connect"
                 else:
-                    if not data.get("month"):
+                    if not data.get("month") or not data.get("charges"):
                         errors["base"] = "parse_failed"
                     else:
                         title = " ".join(x for x in (data.get("apartment"), data.get("unit")) if x)

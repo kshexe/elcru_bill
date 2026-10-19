@@ -2,13 +2,13 @@
 from __future__ import annotations
 
 import logging
+import re
 from typing import Any
 
 import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
-from homeassistant.helpers.aiohttp_client import async_get_clientsession
 from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import DataUpdateCoordinator, UpdateFailed
 
@@ -21,16 +21,53 @@ HISTORY_MONTHS = 24
 _LOGGER = logging.getLogger(__name__)
 
 
+# 고지서는 모바일 웹페이지. HA 기본 User-Agent로는 다른 페이지가 올 수 있어 모바일 브라우저로 위장
+HEADERS = {
+    "User-Agent": (
+        "Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 "
+        "(KHTML, like Gecko) Chrome/128.0.0.0 Mobile Safari/537.36"
+    ),
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+    "Accept-Language": "ko-KR,ko;q=0.9",
+}
+
+
+def _decode(raw: bytes, charset: str | None) -> str:
+    for enc in filter(None, (charset, "utf-8", "cp949")):
+        try:
+            return raw.decode(enc)
+        except (LookupError, UnicodeDecodeError):
+            continue
+    return raw.decode("utf-8", errors="replace")
+
+
 async def fetch_bill(hass: HomeAssistant, room_key: str) -> dict[str, Any]:
-    """RoomKey만 보내면 서버가 302로 최신 고지서(유효 Token)로 보내준다."""
-    session = async_get_clientsession(hass)
+    """RoomKey만 보내면 서버가 302로 최신 고지서(유효 Token)로 보내준다.
+
+    HA 공용 세션은 쿠키를 버리므로(DummyCookieJar) 리다이렉트 중 세션 쿠키가
+    필요한 경우를 대비해 요청마다 쿠키를 유지하는 전용 세션을 쓴다.
+    """
     url = BASE_URL.format(room_key=room_key)
-    async with session.get(url, timeout=aiohttp.ClientTimeout(total=30)) as resp:
-        resp.raise_for_status()
-        html = await resp.text(encoding="utf-8", errors="replace")
-        final_url = str(resp.url)
-    data = await hass.async_add_executor_job(parse_bill, html)
+    async with aiohttp.ClientSession(
+        cookie_jar=aiohttp.CookieJar(unsafe=True),
+        headers=HEADERS,
+        timeout=aiohttp.ClientTimeout(total=30),
+    ) as session:
+        async with session.get(url, allow_redirects=True, max_redirects=10) as resp:
+            resp.raise_for_status()
+            raw = await resp.read()
+            html = _decode(raw, resp.charset)
+            final_url = str(resp.url)
+            status_chain = [r.status for r in resp.history] + [resp.status]
+
+    data = await hass.async_add_executor_job(parse_bill, html, final_url)
     data["url"] = final_url
+    if not data.get("charges"):
+        text = re.sub(r"\s+", " ", re.sub(r"<[^>]+>", " ", html))
+        _LOGGER.warning(
+            "고지서 항목을 찾지 못함: url=%s status=%s len=%d text=%.600s",
+            final_url, status_chain, len(html), text.strip(),
+        )
     return data
 
 

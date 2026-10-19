@@ -44,7 +44,7 @@ def _key(text: str) -> str:
     return re.sub(r"\s+", "", _MARKER_RE.sub("", text))
 
 
-def parse_bill(html: str) -> dict[str, Any]:
+def parse_bill(html: str, url: str = "") -> dict[str, Any]:
     soup = BeautifulSoup(html, "html.parser")
     lines = [_clean(x) for x in soup.get_text("\n").splitlines()]
     text = "\n".join(x for x in lines if x)
@@ -54,8 +54,10 @@ def parse_bill(html: str) -> dict[str, Any]:
         "summary": {}, "details": {}, "charges": {}, "usage": {}, "meters": {},
     }
 
-    if m := re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월분", text):
+    if m := re.search(r"(\d{4})\s*년\s*(\d{1,2})\s*월\s*분", text):
         data["month"] = f"{m.group(1)}-{int(m.group(2)):02d}"
+    elif m := re.search(r"YYYYMM=(\d{4})(\d{2})", url, re.I):
+        data["month"] = f"{m.group(1)}-{m.group(2)}"
     if m := re.search(r"월분\s*\n([^\n]+)", text):
         data["apartment"] = m.group(1).strip()
     if m := re.search(r"(\d+\s*동\s*\d+\s*호)", text):
