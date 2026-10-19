@@ -1,16 +1,14 @@
 {
   "domain": "vnrisa_bill",
-  "name": "아파트 스마트 고지서 (vnrisa)",
+  "name": "엘크루 공과금",
   "codeowners": [],
   "config_flow": true,
-  "dependencies": [
-    "recorder"
-  ],
-  "documentation": "https://github.com/kshexe/vnrisa_bill",
+  "documentation": "https://github.com/kshexe/elcru_bill",
   "iot_class": "cloud_polling",
-  "issue_tracker": "https://github.com/kshexe/vnrisa_bill/issues",
+  "issue_tracker": "https://github.com/kshexe/elcru_bill/issues",
   "requirements": [
     "beautifulsoup4>=4.12"
   ],
-  "version": "1.0.1"
+  "single_config_entry": true,
+  "version": "4.1.0"
 }

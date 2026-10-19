@@ -1,9 +1,32 @@
+"""엘크루 공과금 - 관리비(vnrisa) + 도시가스(GSE) + 코콤 에너지 상수.
+
+v.vnrisa.com의 고지서 링크는 RoomKey만으로는 못 쓴다 - YYYYMM별로 서버가 새로 발급하는
+Token이 정확히 일치해야 하고(실측 확인됨, 2026-10-19), 그 Token은 카카오 알림톡으로만
+오며 예측도 재사용도 불가능하다. 그래서 "RoomKey 등록 후 자동으로 매달 재조회"하는 구조는
+근본적으로 성립하지 않는다 - 매달 새 링크를 사람이 직접 넣어줘야 한다. 그래서 관리비
+쪽은 복잡한 config flow/Token 저장 대신, 텍스트 입력 엔티티 하나에 그 달의 링크를
+그대로 붙여넣으면 그 즉시 조회해서 센서에 반영하는 가장 단순한 구조로 간다.
+
+도시가스(GSE)는 반대로 아이디/비밀번호 로그인이라 Token 문제가 없다 - aptner_parking/
+parkingweb/myhome_parking과 같은 패턴으로, 로그인 정보는 config flow(최초 설정)에서
+한 번 입력받아 저장하고, 조회 주기는 Options flow에서 바꿀 수 있게 한다.
+
+코콤 에너지(kocom_energy, kshexe 포크)도 같은 이유로 합쳤다 - 아파트 단지 월패드에
+직접 붙는 로컬 소켓 통신이라 Token도 없고, 전기/가스/수도 사용량을 따로 보여주던
+센서를 하나의 통합(기기)으로 모아서 관리하기 위함. 소켓 프로토콜 자체(kocom_api.py/
+kocom_util.py)는 원본 그대로 포팅 - 바이트 오프라인 파싱 로직이라 손대지 않았다.
+"""
+
 DOMAIN = "vnrisa_bill"
-PLATFORMS = ["sensor"]
+PLATFORMS = ["sensor", "text"]
 
-CONF_ROOM_KEY = "room_key"
-CONF_CHECK_TIME = "check_time"
-DEFAULT_CHECK_TIME = "09:07"
+CONF_GAS_MEMBER_ID = "gas_member_id"
+CONF_GAS_MEMBER_PWD = "gas_member_pwd"
+CONF_GAS_CHECK_TIME = "gas_check_time"
+DEFAULT_GAS_CHECK_TIME = "09:00"
 
-BASE_URL = "https://v.vnrisa.com/Online_Bill_General.aspx?RoomKey={room_key}&GBN=011"
-EVENT_NEW_BILL = f"{DOMAIN}_new_bill"
+CONF_KOCOM_USERNAME = "kocom_username"
+CONF_KOCOM_PASSWORD = "kocom_password"
+CONF_KOCOM_IP = "kocom_ip"
+CONF_KOCOM_UPDATE_INTERVAL = "kocom_update_interval"
+DEFAULT_KOCOM_UPDATE_INTERVAL = 3600

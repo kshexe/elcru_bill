@@ -1,160 +1,318 @@
-"""고지서의 모든 항목을 센서로 노출. 새 항목이 생기면 자동으로 추가된다."""
+"""text.py가 조회해온 고지서의 모든 항목을 항목명 하드코딩 없이 각자 센서로 만든다.
+
+납부하실금액·당월부과금액 같은 요약 항목, 전기료/수도료/관리비 세부 항목과 소계,
+기후환경요금 같은 할인/부담금, 전기·수도 사용량, 계량기 지침까지 - 고지서에 실제로
+있는 항목만 그때그때 센서로 생긴다. 새 항목이 추가되면 자동으로 센서가 하나 더
+생기고, 이미 있던 항목은 값만 갱신된다(엔티티를 지우진 않음).
+
+더 최신 달 링크를 넣으면 평소대로 상태값이 그 달로 갱신되지만, 과거 달 링크를
+나중에 넣으면(예: 8월 다음에 7월) 현재 보여주는 값(가장 최신 달)은 그대로 두고
+`history` 속성에만 그 달 값을 추가한다 - 과거 데이터를 보려고 넣은 링크가 화면을
+거꾸로 되돌리지 않도록.
+
+엔티티의 unique_id는 항목의 "안정적인 key"(예: "전기료 소계")로만 정하고, 화면에
+보이는 이름(표시명, 예: "전기료 소계 (vnrisa)")은 따로 둔다 - 출처 태그를 붙이거나
+표시 문구를 나중에 또 바꾸더라도 entity_id가 안 바뀌어서 history가 안 날아간다.
+
+프로미넌트(기본 카테고리, 기기 카드 상단)로 남는 건 코콤의 전기/가스/수도 사용량
+3개뿐이다(kocom_sensor.py) - 실시간 로컬 월패드 값이라 가장 "지금" 상황을 보여주는
+대표값으로 쓴다. vnrisa/GSE 쪽은 전부 진단으로 내려가고, 서로 이름이 겹치는 항목이
+많아서(예: 전기 사용량이 vnrisa/코콤 양쪽에 있음) 전부 "(vnrisa)"/"(GSE)" 출처 태그를
+붙인다.
+"""
 from __future__ import annotations
 
-from datetime import date
-from typing import Any, Callable
+from typing import Any
 
-from homeassistant.components.sensor import (
-    SensorDeviceClass,
-    SensorEntity,
-)
+from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, callback
-from homeassistant.helpers.device_registry import DeviceEntryType, DeviceInfo
+from homeassistant.core import HomeAssistant
+from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
-from homeassistant.helpers.update_coordinator import CoordinatorEntity
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.util import slugify
 
+from . import VnrisaConfigEntry
 from .const import DOMAIN
-from .coordinator import VnrisaCoordinator
-
-WON = "원"
-METER_UNITS = {"전기": ("kWh", SensorDeviceClass.ENERGY)}
-METER_DEFAULT = ("m³", SensorDeviceClass.WATER)
+from .kocom_sensor import async_setup_kocom_entry
 
 
-def _spec_list(data: dict[str, Any]) -> list[dict[str, Any]]:
-    """data → 센서 정의 목록. key는 unique_id 접미사."""
-    specs: list[dict[str, Any]] = []
-
-    for label in data["summary"]:
-        specs.append({"key": f"summary_{label}", "name": label, "kind": "won",
-                      "get": lambda d, l=label: d["summary"].get(l)})
-    for label in data["details"]:
-        specs.append({"key": f"detail_{label}", "name": label, "kind": "won",
-                      "get": lambda d, l=label: d["details"].get(l)})
-    for label in data["charges"]:
-        specs.append({"key": f"charge_{label}", "name": label, "kind": "won",
-                      "get": lambda d, l=label: (d["charges"].get(l) or {}).get("value"),
-                      "attrs": lambda d, l=label: {
-                          "전월대비": (d["charges"].get(l) or {}).get("prev_diff"),
-                          "전년동월대비": (d["charges"].get(l) or {}).get("yoy_diff")}})
-    for label, u in data["usage"].items():
-        specs.append({"key": f"usage_{label}", "name": f"{label} 사용량", "kind": "usage",
-                      "unit": u["unit"],
-                      "get": lambda d, l=label: (d["usage"].get(l) or {}).get("value")})
-    for label in data["meters"]:
-        specs.append({"key": f"meter_{label}", "name": f"{label} 계량기 지침", "kind": "meter",
-                      "meter": label,
-                      "get": lambda d, l=label: (d["meters"].get(l) or {}).get("당월"),
-                      "attrs": None})
-    return specs
+def _device_info(entry: ConfigEntry) -> dict:
+    return {
+        "identifiers": {(DOMAIN, entry.entry_id)},
+        "name": "엘크루 공과금",
+        "manufacturer": "vnrisa (비공식) / GSE 도시가스 / Kocom",
+        "model": "관리비·가스·코콤 고지서",
+    }
 
 
 async def async_setup_entry(
-    hass: HomeAssistant, entry: ConfigEntry, async_add_entities: AddEntitiesCallback
+    hass: HomeAssistant, entry: VnrisaConfigEntry, async_add_entities: AddEntitiesCallback
 ) -> None:
-    coordinator: VnrisaCoordinator = entry.runtime_data
-    known: set[str] = set()
+    runtime = entry.runtime_data
+    runtime.add_sensor_entities = async_add_entities
 
-    @callback
-    def _add_new() -> None:
-        if not coordinator.data:
-            return
-        new: list[SensorEntity] = []
-        if "month" not in known:
-            known.update({"month", "due_date"})
-            new += [VnrisaMonthSensor(coordinator, entry), VnrisaDueDateSensor(coordinator, entry)]
-        for spec in _spec_list(coordinator.data):
-            if spec["key"] not in known:
-                known.add(spec["key"])
-                new.append(VnrisaSensor(coordinator, entry, spec))
-        if new:
-            async_add_entities(new)
+    runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회 시각 (vnrisa)", "bill_timestamp")
+    runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회 시각 (GSE)", "gas_timestamp")
+    async_add_entities([runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor])
 
-    _add_new()
-    entry.async_on_unload(coordinator.async_add_listener(_add_new))
+    await async_setup_kocom_entry(hass, entry, async_add_entities)
 
 
-class _Base(CoordinatorEntity[VnrisaCoordinator], SensorEntity):
-    _attr_has_entity_name = True
+def flatten_bill_items(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """파싱된 고지서 dict를 {key: {display_name, value, unit, attrs}}로 평탄화.
 
-    def __init__(
-        self, coordinator: VnrisaCoordinator, entry: ConfigEntry, key: str, name: str = ""
-    ) -> None:
-        super().__init__(coordinator)
-        self._attr_unique_id = f"{coordinator.room_key}_{key}"
-        self.entity_id = f"sensor.gwanribi_{slugify(name or key)}"
-        self._attr_device_info = DeviceInfo(
-            identifiers={(DOMAIN, coordinator.room_key)},
-            name=entry.title,
-            manufacturer="vnrisa 스마트 고지서",
-            entry_type=DeviceEntryType.SERVICE,
-            configuration_url=(coordinator.data or {}).get("url"),
+    key는 "전기료 소계"처럼 출처 태그 없는 안정적인 이름(unique_id용), display_name은
+    "전기료 소계 (vnrisa)"처럼 화면에 보이는 이름. usage/meters는 charges와 key가
+    겹칠 수 있어(예: "전기") 접미사를 붙인다.
+    """
+    items: dict[str, dict[str, Any]] = {}
+
+    def add(key: str, value: Any, unit: str | None, attrs: dict[str, Any]) -> None:
+        items[key] = {"display_name": f"{key} (vnrisa)", "value": value, "unit": unit, "attrs": attrs}
+
+    for key, value in {**data.get("summary", {}), **data.get("details", {})}.items():
+        add(key, value, "원", {})
+
+    for key, c in data.get("charges", {}).items():
+        add(
+            key,
+            c.get("value"),
+            "원",
+            {
+                "전월": c.get("prev"),
+                "전월차액": c.get("prev_diff"),
+                "전년동월": c.get("yoy"),
+                "전년동월차액": c.get("yoy_diff"),
+                "구분": c.get("group"),
+            },
         )
 
+    for name, u in data.get("usage", {}).items():
+        add(f"{name} 사용량", u.get("value"), u.get("unit"), {})
 
-class VnrisaSensor(_Base):
-    def __init__(self, coordinator, entry, spec: dict[str, Any]) -> None:
-        super().__init__(coordinator, entry, spec["key"], spec["name"])
-        self._get: Callable = spec["get"]
-        self._attrs: Callable | None = spec.get("attrs")
-        self._attr_name = spec["name"]
-        kind = spec["kind"]
-        if kind == "won":
-            self._attr_native_unit_of_measurement = WON
-            self._attr_icon = "mdi:cash"
-        elif kind == "usage":
-            self._attr_native_unit_of_measurement = spec["unit"]
-            self._attr_icon = "mdi:flash" if spec["unit"] == "kWh" else "mdi:water"
-        else:  # meter: 월별 기록은 통계(vnrisa_bill:…)로 따로 들어감
-            unit, dc = METER_UNITS.get(spec["meter"], METER_DEFAULT)
-            self._attr_native_unit_of_measurement = unit
-            self._attr_device_class = dc
+    for name, m in data.get("meters", {}).items():
+        add(f"{name} 계량기 지침", m.get("당월"), None, {"전월": m.get("전월")})
 
-    @property
-    def native_value(self):
-        return self._get(self.coordinator.data) if self.coordinator.data else None
-
-    @property
-    def extra_state_attributes(self):
-        d = self.coordinator.data or {}
-        attrs: dict[str, Any] = {"청구월": d.get("month")}
-        if self._attrs and d:
-            attrs.update(self._attrs(d))
-        hist = self.coordinator.history.get(self._attr_name, {})
-        for ym in sorted(hist, reverse=True):  # 최근 월이 위로
-            attrs[ym] = hist[ym]
-        return attrs
+    return items
 
 
-class VnrisaMonthSensor(_Base):
-    _attr_name = "청구월"
-    _attr_icon = "mdi:calendar-month"
+async def _save_item_meta(entry: VnrisaConfigEntry, namespace: str, items: dict[str, dict[str, Any]]) -> None:
+    """키마다 display_name/unit만 따로 Store에 쌓아둔다 - 선거관리운영비처럼 특정 달에만
+    잠깐 나오는 항목은 그 달이 지나면 최신 고지서 조회 결과엔 더는 없어서, 이 메타
+    기록이 없으면 재시작 후 엔티티 자체가 다시 안 만들어져 recorder에 남은 history를
+    복원할 기회조차 없어진다(restore_missing_item_sensors가 이걸로 껍데기를 되살림)."""
+    runtime = entry.runtime_data
+    if runtime.item_meta_store is None:
+        return
+    meta = await runtime.item_meta_store.async_load() or {}
+    ns = meta.setdefault(namespace, {})
+    changed = False
+    for key, item in items.items():
+        entry_meta = {"display_name": item.get("display_name", key), "unit": item.get("unit")}
+        if ns.get(key) != entry_meta:
+            ns[key] = entry_meta
+            changed = True
+    if changed:
+        await runtime.item_meta_store.async_save(meta)
 
-    def __init__(self, coordinator, entry) -> None:
-        super().__init__(coordinator, entry, "info_month")
-        self.entity_id = "sensor.gwanribi_cheonggueol"
 
-    @property
-    def native_value(self):
-        return (self.coordinator.data or {}).get("month")
+async def restore_missing_item_sensors(entry: VnrisaConfigEntry) -> None:
+    """재시작 직후엔 가장 최근 고지서/가스 조회 결과에 실제로 들어있는 항목만 엔티티로
+    만들어진다 - 그래서 선거관리운영비처럼 어쩌다 한두 달만 나오는 항목은 최신 조회엔
+    없으니 이번 세션엔 엔티티조차 안 만들어지고, "unavailable" 상태로 남아 history
+    속성도 안 보이게 된다. 지금까지 한 번이라도 본 적 있는 모든 항목(메타 Store에
+    쌓인 전부)을 값 없는 껍데기로 다시 만들어줘서, RestoreEntity가 recorder에 남은
+    마지막 값과 history를 정상적으로 복원할 기회를 준다."""
+    runtime = entry.runtime_data
+    if runtime.item_meta_store is None:
+        return
+    meta = await runtime.item_meta_store.async_load() or {}
+    new_entities = []
+    for namespace, sensors in (("bill", runtime.item_sensors), ("gas", runtime.gas_sensors)):
+        for key, item_meta in meta.get(namespace, {}).items():
+            if key in sensors:
+                continue
+            stub_item = {
+                "display_name": item_meta.get("display_name", key),
+                "value": None,
+                "unit": item_meta.get("unit"),
+                "attrs": {},
+            }
+            sensor = VnrisaItemSensor(entry, key, stub_item, None)
+            sensors[key] = sensor
+            new_entities.append(sensor)
+    if new_entities and runtime.add_sensor_entities is not None:
+        runtime.add_sensor_entities(new_entities)
 
-    @property
-    def extra_state_attributes(self):
-        d = self.coordinator.data or {}
-        return {"url": d.get("url"), "apartment": d.get("apartment"), "unit": d.get("unit")}
+
+async def sync_item_sensors(entry: VnrisaConfigEntry, data: dict[str, Any]) -> None:
+    """고지서 데이터를 받아서, 없는 항목은 새 센서로 추가하고 있는 항목은 값을 갱신(또는
+    과거 달이면 history에만 추가)한다."""
+    runtime = entry.runtime_data
+    month = data.get("month")
+    new_entities = []
+    items = flatten_bill_items(data)
+    for key, item in items.items():
+        existing = runtime.item_sensors.get(key)
+        if existing is None:
+            sensor = VnrisaItemSensor(entry, key, item, month)
+            runtime.item_sensors[key] = sensor
+            new_entities.append(sensor)
+        else:
+            existing.set_value(item, month)
+    if new_entities and runtime.add_sensor_entities is not None:
+        runtime.add_sensor_entities(new_entities)
+    await _save_item_meta(entry, "bill", items)
 
 
-class VnrisaDueDateSensor(_Base):
-    _attr_name = "납부마감일"
-    _attr_device_class = SensorDeviceClass.DATE
+async def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> None:
+    """도시가스 로그인 조회 결과(gas.py의 fetch_gas_history - 여러 달치 한번에)를
+    가스 사용량/청구금액/납부금액/계량기 지침 센서에 반영. 각 달이 VnrisaItemSensor에
+    그대로 들어가므로(이미 history 병합 로직이 있음) 월 순서와 무관하게 안전하게
+    누적된다.
 
-    def __init__(self, coordinator, entry) -> None:
-        super().__init__(coordinator, entry, "info_due_date")
-        self.entity_id = "sensor.gwanribi_nabbumagamil"
+    관리비 고지서(item_sensors)와 별도의 dict(gas_sensors)에서 관리 - 출처가 다른
+    데이터를 섞지 않기 위해 분리.
+    """
+    runtime = entry.runtime_data
+    new_entities = []
+    for row in rows:
+        month = row.get("month")
+        items = {
+            "가스 사용량": {
+                "display_name": "가스 사용량 (GSE)",
+                "value": row.get("usage_m3"),
+                "unit": "㎥",
+                "attrs": {"검침코드": row.get("meter_status")},
+            },
+            "가스 청구금액": {
+                "display_name": "가스 청구금액 (GSE)",
+                "value": row.get("billed_amount"),
+                "unit": "원",
+                "attrs": {},
+            },
+            "가스 납부금액": {
+                "display_name": "가스 납부금액 (GSE)",
+                "value": row.get("paid_amount"),
+                "unit": "원",
+                "attrs": {"수납일": row.get("payment_date"), "미납": row.get("unpaid")},
+            },
+            "가스 계량기 지침": {
+                "display_name": "가스 계량기 지침 (GSE)",
+                "value": row.get("meter_reading"),
+                "unit": "㎥",
+                "attrs": {},
+            },
+        }
+        for key, item in items.items():
+            existing = runtime.gas_sensors.get(key)
+            if existing is None:
+                sensor = VnrisaItemSensor(entry, key, item, month)
+                runtime.gas_sensors[key] = sensor
+                new_entities.append(sensor)
+            else:
+                existing.set_value(item, month)
+    if new_entities and runtime.add_sensor_entities is not None:
+        runtime.add_sensor_entities(new_entities)
+    if rows:
+        # 매달 키가 동일(가스 사용량/청구금액/납부금액/계량기 지침)해서 마지막 달의
+        # items 하나만 저장해도 충분하다.
+        await _save_item_meta(entry, "gas", items)
 
-    @property
-    def native_value(self):
-        v = (self.coordinator.data or {}).get("due_date")
-        return date.fromisoformat(v) if v else None
+
+class VnrisaTimestampSensor(RestoreEntity, SensorEntity):
+    """코콤의 '코콤 에너지 응답시각'처럼, vnrisa 관리비/GSE 가스도 마지막으로 성공한
+    조회 시각을 볼 수 있게 - 조회가 조용히 하루 종일 실패하고 있어도 바로 알아챌 수
+    있다."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+    _attr_icon = "mdi:clock-check-outline"
+
+    def __init__(self, entry: VnrisaConfigEntry, name: str, unique_suffix: str) -> None:
+        self._attr_name = name
+        self._attr_unique_id = f"{entry.entry_id}_{unique_suffix}"
+        self._attr_device_info = _device_info(entry)
+        self._attr_native_value = None
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is not None and last_state.state not in (None, "unknown", "unavailable"):
+            self._attr_native_value = last_state.state
+
+    def set_value(self, value: str) -> None:
+        self._attr_native_value = value
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+
+class VnrisaItemSensor(RestoreEntity, SensorEntity):
+    """vnrisa 관리비/GSE 가스 출처 센서는 전부 진단 카테고리 - 상단에 바로 보이는 건
+    코콤의 전기/가스/수도 사용량 3개뿐이다(kocom_sensor.py, 이 클래스를 안 씀)."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(self, entry: VnrisaConfigEntry, key: str, item: dict[str, Any], month: str | None) -> None:
+        self._attr_name = item.get("display_name", key)
+        self._attr_unique_id = f"{entry.entry_id}_{slugify(key)}"
+        self._attr_device_info = _device_info(entry)
+        self._attr_native_unit_of_measurement = item.get("unit")
+        self._latest_month: str | None = None
+        self._history: dict[str, Any] = {}
+        self._regular_attrs: dict[str, Any] = {}
+        self.set_value(item, month)
+
+    async def async_added_to_hass(self) -> None:
+        """재시작 시 __init__.py가 가장 최근 링크 하나만 자동 재조회해서 '이번 세션에
+        이미 값이 있다'고 착각하고 과거 history를 복원 안 하면, 그 전 재시작들 때 쌓인
+        다른 달 기록이 매번 날아간다 - 그래서 이미 값이 있어도 history는 항상 병합하고,
+        현재 표시값만 "이번 세션에 실제로 받은 값이 있으면 그걸 우선"한다."""
+        await super().async_added_to_hass()
+        last_state = await self.async_get_last_state()
+        if last_state is None or last_state.state in (None, "unknown", "unavailable"):
+            return
+
+        old_attrs = dict(last_state.attributes)
+        old_history = dict(old_attrs.pop("history", {}) or {})
+        for month, value in old_history.items():
+            self._history.setdefault(month, value)
+
+        if self._latest_month is None:
+            # 이번 세션에 아직 실제 조회가 없었음 - 복원된 값을 그대로 현재값으로 사용
+            value = last_state.state
+            try:
+                value = float(value) if "." in value else int(value)
+            except ValueError:
+                pass
+            self._attr_native_value = value
+            self._regular_attrs = old_attrs
+            self._latest_month = max(self._history) if self._history else None
+
+        self._attr_extra_state_attributes = {
+            **self._regular_attrs,
+            "history": dict(sorted(self._history.items())),
+        }
+        if self.hass is not None:
+            self.async_write_ha_state()
+
+    def set_value(self, item: dict[str, Any], month: str | None) -> None:
+        if month is not None:
+            self._history[month] = item.get("value")
+            is_latest = self._latest_month is None or month >= self._latest_month
+        else:
+            is_latest = True  # 월 정보가 없으면(이례적) 그냥 최신으로 취급
+
+        if is_latest:
+            self._latest_month = month
+            self._attr_native_value = item.get("value")
+            self._regular_attrs = {k: v for k, v in item.get("attrs", {}).items() if v is not None}
+
+        self._attr_extra_state_attributes = {
+            **self._regular_attrs,
+            "history": dict(sorted(self._history.items())),
+        }
+        if self.hass is not None:
+            self.async_write_ha_state()

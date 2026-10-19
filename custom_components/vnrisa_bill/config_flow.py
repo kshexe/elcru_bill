@@ -1,61 +1,162 @@
+"""설정 3단계: ① GSE 도시가스 로그인(아이디/비밀번호, 로그인 검증까지 함) ② 코콤 아이디로
+단지 서버 IP 조회(kocom_energy 원본과 동일한 방식) ③ 코콤 IP/아이디/비밀번호로 인증 검증
+후 전부 저장. 관리비 고지서는 입력값이 없다 - 설치 후 '고지서 링크' 텍스트 엔티티에
+붙여넣는 방식 그대로."""
 from __future__ import annotations
 
+import logging
 import re
 from typing import Any
 
+import aiohttp
+import async_timeout
 import voluptuous as vol
 
 from homeassistant.config_entries import ConfigEntry, ConfigFlow, ConfigFlowResult, OptionsFlow
 from homeassistant.core import callback
+from homeassistant.helpers import selector
 
-from .const import CONF_CHECK_TIME, CONF_ROOM_KEY, DEFAULT_CHECK_TIME, DOMAIN
-from .coordinator import fetch_bill
+from .const import (
+    CONF_GAS_CHECK_TIME,
+    CONF_GAS_MEMBER_ID,
+    CONF_GAS_MEMBER_PWD,
+    CONF_KOCOM_IP,
+    CONF_KOCOM_PASSWORD,
+    CONF_KOCOM_UPDATE_INTERVAL,
+    CONF_KOCOM_USERNAME,
+    DEFAULT_GAS_CHECK_TIME,
+    DEFAULT_KOCOM_UPDATE_INTERVAL,
+    DOMAIN,
+)
+from .gas import GasLoginError, fetch_gas_history
+from .kocom_api import KocomAPI
+from .kocom_exceptions import IpAddressNotFoundError
+from .kocom_util import md5_hashing, string_to_padded_hex
 
+_LOGGER = logging.getLogger(__name__)
 _TIME_RE = re.compile(r"^([01]?\d|2[0-3]):[0-5]\d$")
 
-
-def _extract_room_key(value: str) -> str | None:
-    value = value.strip()
-    if m := re.search(r"RoomKey=(\d+)", value, re.I):
-        return m.group(1)
-    return value if value.isdigit() else None
+GAS_SCHEMA = vol.Schema(
+    {
+        vol.Required(CONF_GAS_MEMBER_ID): str,
+        vol.Required(CONF_GAS_MEMBER_PWD): selector.TextSelector(
+            selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+        ),
+    }
+)
 
 
 class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
     VERSION = 1
 
+    def __init__(self) -> None:
+        self._gas_data: dict[str, Any] = {}
+        self._kocom_username: str = ""
+        self._kocom_ip: str = ""
+
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """① GSE 도시가스 로그인."""
+        self._async_abort_entries_match()
         errors: dict[str, str] = {}
         if user_input is not None:
-            room_key = _extract_room_key(user_input[CONF_ROOM_KEY])
-            check_time = user_input[CONF_CHECK_TIME].strip()
-            if not room_key:
-                errors[CONF_ROOM_KEY] = "invalid_room_key"
-            elif not _TIME_RE.match(check_time):
-                errors[CONF_CHECK_TIME] = "invalid_time"
+            member_id = user_input[CONF_GAS_MEMBER_ID].strip()
+            member_pwd = user_input[CONF_GAS_MEMBER_PWD]
+            try:
+                await fetch_gas_history(member_id, member_pwd, months_back=1)
+            except GasLoginError as err:
+                _LOGGER.warning("가스 로그인 검증 실패: %s", err)
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("가스 로그인 검증 중 알 수 없는 오류")
+                errors["base"] = "cannot_connect"
             else:
-                await self.async_set_unique_id(room_key)
-                self._abort_if_unique_id_configured()
-                try:
-                    data = await fetch_bill(self.hass, room_key)
-                except Exception:  # noqa: BLE001
-                    errors["base"] = "cannot_connect"
-                else:
-                    if not data.get("month") or not data.get("charges"):
-                        errors["base"] = "parse_failed"
-                    else:
-                        title = " ".join(x for x in (data.get("apartment"), data.get("unit")) if x)
-                        return self.async_create_entry(
-                            title=title or f"관리비 {room_key}",
-                            data={CONF_ROOM_KEY: room_key, CONF_CHECK_TIME: check_time},
-                        )
+                self._gas_data = {CONF_GAS_MEMBER_ID: member_id, CONF_GAS_MEMBER_PWD: member_pwd}
+                return await self.async_step_kocom_user()
+
+        return self.async_show_form(step_id="user", data_schema=GAS_SCHEMA, errors=errors)
+
+    async def async_step_kocom_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """② 코콤 아이디로 단지 월패드 서버 IP 조회 (kocom_energy 원본과 동일한 방식)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            self._kocom_username = user_input[CONF_KOCOM_USERNAME].strip()
+            try:
+                async with aiohttp.ClientSession() as session, async_timeout.timeout(10):
+                    resp = await session.get(
+                        f"http://221.141.3.28/SvrInfo.php?uid={self._kocom_username}"
+                    )
+                    resp.raise_for_status()
+                    response_text = await resp.text()
+                ip_match = re.search(r"3 => ([\d.]+)", response_text)
+                if not ip_match:
+                    raise IpAddressNotFoundError("IP address not found in the response")
+                self._kocom_ip = ip_match.group(1)
+                return await self.async_step_kocom_account()
+            except aiohttp.ClientError:
+                errors["base"] = "cannot_connect"
+            except TimeoutError:
+                errors["base"] = "timeout"
+            except IpAddressNotFoundError:
+                errors["base"] = "ip_not_found"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("코콤 서버 IP 조회 중 알 수 없는 오류")
+                errors["base"] = "cannot_connect"
 
         return self.async_show_form(
-            step_id="user",
+            step_id="kocom_user",
+            data_schema=vol.Schema({vol.Required(CONF_KOCOM_USERNAME): str}),
+            errors=errors,
+        )
+
+    async def async_step_kocom_account(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """③ 코콤 IP/아이디/비밀번호로 실제 인증 검증 후 전부 저장."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            ip = user_input[CONF_KOCOM_IP]
+            kocom_username = user_input[CONF_KOCOM_USERNAME]
+            kocom_password = user_input[CONF_KOCOM_PASSWORD]
+            update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
+
+            hashed_username = string_to_padded_hex(md5_hashing(kocom_username), 80)
+            hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
+            fcm = string_to_padded_hex("", 512)
+            phone = string_to_padded_hex("", 32)
+
+            api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
+            try:
+                authenticated = await api.authenticate()
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
+                authenticated = False
+
+            if authenticated:
+                return self.async_create_entry(
+                    title="엘크루 공과금",
+                    data={
+                        **self._gas_data,
+                        CONF_KOCOM_IP: ip,
+                        CONF_KOCOM_USERNAME: hashed_username,
+                        CONF_KOCOM_PASSWORD: hashed_password,
+                        "kocom_fcm": fcm,
+                        "kocom_phone": phone,
+                        CONF_KOCOM_UPDATE_INTERVAL: update_interval,
+                        "kocom_original_username": kocom_username,
+                    },
+                )
+            errors["base"] = "auth_error"
+
+        return self.async_show_form(
+            step_id="kocom_account",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_ROOM_KEY): str,
-                    vol.Required(CONF_CHECK_TIME, default=DEFAULT_CHECK_TIME): str,
+                    vol.Required(CONF_KOCOM_IP, default=self._kocom_ip): str,
+                    vol.Required(CONF_KOCOM_USERNAME, default=self._kocom_username): str,
+                    vol.Required(CONF_KOCOM_PASSWORD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
+                    vol.Required(
+                        CONF_KOCOM_UPDATE_INTERVAL, default=DEFAULT_KOCOM_UPDATE_INTERVAL
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
                 }
             ),
             errors=errors,
@@ -70,17 +171,14 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
 class VnrisaOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         errors: dict[str, str] = {}
-        current = self.config_entry.options.get(
-            CONF_CHECK_TIME, self.config_entry.data.get(CONF_CHECK_TIME, DEFAULT_CHECK_TIME)
-        )
+        current = self.config_entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
         if user_input is not None:
-            if _TIME_RE.match(user_input[CONF_CHECK_TIME].strip()):
-                return self.async_create_entry(
-                    data={CONF_CHECK_TIME: user_input[CONF_CHECK_TIME].strip()}
-                )
-            errors[CONF_CHECK_TIME] = "invalid_time"
+            check_time = user_input[CONF_GAS_CHECK_TIME].strip()
+            if _TIME_RE.match(check_time):
+                return self.async_create_entry(data={CONF_GAS_CHECK_TIME: check_time})
+            errors[CONF_GAS_CHECK_TIME] = "invalid_time"
         return self.async_show_form(
             step_id="init",
-            data_schema=vol.Schema({vol.Required(CONF_CHECK_TIME, default=current): str}),
+            data_schema=vol.Schema({vol.Required(CONF_GAS_CHECK_TIME, default=current): str}),
             errors=errors,
         )

@@ -1,44 +1,167 @@
-"""아파트 스마트 고지서 (vnrisa) 통합."""
+"""엘크루 공과금 - 관리비(vnrisa) + 도시가스(GSE) + 코콤 에너지 통합.
+
+관리비 고지서는 텍스트 입력창에 그 달 링크를 붙여넣으면 즉시 조회(Token이 매달
+바뀌어서 자동 재조회가 불가능 - 실측 확인됨). 다만 "링크를 넣을 때만 조회"라고 해서
+재시작할 때 센서가 다시 비는 건 별개 문제였다 - 마지막으로 성공한 링크를 Store에
+저장해뒀다가, 설치/재시작 직후 그 링크로 자동으로 한 번 더 조회해서 센서를 채운다
+(entry.data에 넣으면 옵션 변경 감지용 update_listener가 매번 전체 reload를 일으켜서,
+그보다 가벼운 Store를 쓴다).
+
+도시가스는 설정(최초 설치 시)에서 입력한 아이디/비밀번호로 매일 지정 시각(설정 →
+옵션에서 변경 가능, 기본 09:00)에 로그인해서 24개월치 고지/수납내역을 한 번에
+재조회한다 - 로그인도 매번 새로 하므로(세션을 유지하지 않음) 세션 만료를 신경 쓸
+필요가 없다.
+"""
 from __future__ import annotations
 
+from dataclasses import dataclass, field
+import datetime
+import logging
+from typing import Any
+
+import aiohttp
+
 from homeassistant.config_entries import ConfigEntry
-from homeassistant.core import HomeAssistant, ServiceCall
+from homeassistant.core import HomeAssistant
 from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.storage import Store
 
-from .const import CONF_CHECK_TIME, DEFAULT_CHECK_TIME, DOMAIN, PLATFORMS
-from .coordinator import VnrisaCoordinator
+from .const import CONF_GAS_CHECK_TIME, CONF_GAS_MEMBER_ID, CONF_GAS_MEMBER_PWD, DEFAULT_GAS_CHECK_TIME, DOMAIN, PLATFORMS
+from .gas import GasLoginError, fetch_gas_history
+
+_LOGGER = logging.getLogger(__name__)
+
+type VnrisaConfigEntry = ConfigEntry[VnrisaRuntimeData]
 
 
-async def async_setup_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
-    coordinator = VnrisaCoordinator(hass, entry)
-    await coordinator.async_config_entry_first_refresh()
-    entry.runtime_data = coordinator
+@dataclass
+class VnrisaRuntimeData:
+    """text.py/sensor.py가 공유하는 상태.
 
-    check = entry.options.get(CONF_CHECK_TIME, entry.data.get(CONF_CHECK_TIME, DEFAULT_CHECK_TIME))
-    hour, minute = (int(x) for x in check.split(":"))
+    parkingweb/myhome_parking과 같은 패턴 - 엔티티가 자기 자신을 여기 등록해두고,
+    다른 엔티티가 직접 참조로 상태를 갱신한다(디스패처 신호 없이).
+    """
 
-    async def _scheduled(_now) -> None:
-        await coordinator.async_request_refresh()
+    # 관리비 고지서 (링크를 붙여넣을 때만 조회, 재시작 시엔 url_store에 저장된 마지막
+    # 링크로 자동 재조회)
+    url: str = ""
+    url_store: Store | None = None
+    data: dict[str, Any] | None = None
+    error: str | None = None
+    text_entity: Any = None
+    item_sensors: dict[str, Any] = field(default_factory=dict)
+    add_sensor_entities: Any = None
+    bill_timestamp_sensor: Any = None
+
+    # 도시가스 (아이디/비밀번호는 entry.data에 저장 - 여기엔 조회 결과만)
+    gas_error: str | None = None
+    gas_sensors: dict[str, Any] = field(default_factory=dict)
+    gas_timestamp_sensor: Any = None
+
+    # 항목별 display_name/unit만 따로 쌓아두는 메타 Store - 선거관리운영비처럼
+    # 특정 달에만 나오는 항목도 재시작 후 다시 엔티티로 복원할 수 있게 한다
+    # (sensor.py의 restore_missing_item_sensors가 사용).
+    item_meta_store: Store | None = None
+
+
+async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bool:
+    runtime = VnrisaRuntimeData()
+    runtime.url_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_bill_url")
+    runtime.item_meta_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_item_meta")
+    entry.runtime_data = runtime
+
+    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
+
+    stored_url = await runtime.url_store.async_load()
+    if stored_url:
+        await async_refresh_bill(entry, stored_url)
+
+    await async_refresh_gas(entry)  # 설치/재시작 직후 바로 한 번 조회
+
+    from .sensor import restore_missing_item_sensors  # 순환 임포트 방지용 지연 임포트
+
+    # 이번 세션 조회 결과엔 없지만(예: 선거관리운영비처럼 특정 달에만 나오는 항목)
+    # 전에 한 번이라도 본 적 있는 항목은 값 없는 껍데기로 다시 만들어, recorder에
+    # 남은 마지막 값/history를 복원할 기회를 준다.
+    await restore_missing_item_sensors(entry)
+
+    check_time = entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
+    hour, minute = (int(x) for x in check_time.split(":"))
+
+    async def _gas_scheduled(_now) -> None:
+        await async_refresh_gas(entry)
 
     entry.async_on_unload(
-        async_track_time_change(hass, _scheduled, hour=hour, minute=minute, second=0)
+        async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
     )
     entry.async_on_unload(entry.add_update_listener(_reload))
 
-    if not hass.services.has_service(DOMAIN, "refresh"):
-        async def _refresh(call: ServiceCall) -> None:
-            for e in hass.config_entries.async_loaded_entries(DOMAIN):
-                await e.runtime_data.async_request_refresh()
-
-        hass.services.async_register(DOMAIN, "refresh", _refresh)
-
-    await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
     return True
 
 
-async def _reload(hass: HomeAssistant, entry: ConfigEntry) -> None:
+async def _reload(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
+    """옵션(가스 조회 시각)이 바뀌면 다시 로드해서 새 시각으로 예약을 다시 건다."""
     await hass.config_entries.async_reload(entry.entry_id)
 
 
-async def async_unload_entry(hass: HomeAssistant, entry: ConfigEntry) -> bool:
+async def async_unload_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bool:
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
+
+
+async def async_refresh_bill(entry: VnrisaConfigEntry, url: str) -> bool:
+    """고지서 링크를 조회해서 센서에 반영하고, 성공하면 Store에 저장해 다음 재시작 때도
+    자동으로 다시 쓸 수 있게 한다. text.py(사용자가 직접 입력)와 여기(재시작 시 자동
+    재조회) 양쪽에서 같이 쓰는 공용 함수."""
+    from .fetch import fetch_bill  # 순환 임포트 방지용 지연 임포트
+    from .sensor import sync_item_sensors
+
+    runtime = entry.runtime_data
+    runtime.url = url
+    try:
+        data = await fetch_bill(url)
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.warning("고지서 조회 실패: %s", err)
+        runtime.error = f"조회 실패: {err}"
+        return False
+
+    if not data.get("month") or not data.get("summary"):
+        _LOGGER.warning("고지서 항목을 찾지 못함 (페이지 구조 변경 또는 잘못된 링크)")
+        runtime.error = "고지서 항목을 찾지 못함 - 링크가 올바른지 확인하세요"
+        return False
+
+    runtime.error = None
+    runtime.data = data
+    await sync_item_sensors(entry, data)
+    if runtime.bill_timestamp_sensor is not None:
+        runtime.bill_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    if runtime.url_store is not None:
+        await runtime.url_store.async_save(url)
+    return True
+
+
+async def async_refresh_gas(entry: VnrisaConfigEntry) -> None:
+    """entry.data에 저장된 아이디/비밀번호로 로그인해서 고지/수납내역을 전부 조회해
+    센서에 반영한다."""
+    from .sensor import sync_gas_sensors  # 순환 임포트 방지용 지연 임포트
+
+    runtime = entry.runtime_data
+    member_id = entry.data.get(CONF_GAS_MEMBER_ID)
+    member_pwd = entry.data.get(CONF_GAS_MEMBER_PWD)
+    if not member_id or not member_pwd:
+        return
+
+    try:
+        rows = await fetch_gas_history(member_id, member_pwd)
+    except GasLoginError as err:
+        _LOGGER.warning("도시가스 로그인/조회 실패: %s", err)
+        runtime.gas_error = str(err)
+        return
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.warning("도시가스 조회 중 통신 오류: %s", err)
+        runtime.gas_error = f"조회 실패: {err}"
+        return
+
+    runtime.gas_error = None
+    await sync_gas_sensors(entry, rows)
+    if runtime.gas_timestamp_sensor is not None:
+        runtime.gas_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))

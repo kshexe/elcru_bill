@@ -2,41 +2,53 @@
   "config": {
     "step": {
       "user": {
-        "title": "아파트 스마트 고지서",
-        "description": "고지서 링크(URL) 전체 또는 RoomKey 숫자를 입력하세요.",
+        "title": "엘크루 공과금 - 도시가스",
+        "description": "GSE 도시가스(yesgse.com) 로그인 정보를 입력하세요. 관리비 고지서는 설치 후 '고지서 링크' 입력창에 따로 붙여넣으면 됩니다.",
         "data": {
-          "room_key": "고지서 URL 또는 RoomKey",
-          "check_time": "매일 확인 시각 (HH:MM)"
+          "gas_member_id": "가스 아이디",
+          "gas_member_pwd": "가스 비밀번호"
+        }
+      },
+      "kocom_user": {
+        "title": "엘크루 공과금 - 코콤 에너지",
+        "description": "코콤 아이디를 입력하면 단지 월패드 서버 주소를 자동으로 찾습니다.",
+        "data": {
+          "kocom_username": "코콤 아이디"
+        }
+      },
+      "kocom_account": {
+        "title": "엘크루 공과금 - 코콤 에너지 로그인",
+        "description": "서버 주소가 자동으로 채워졌습니다. 비밀번호를 입력하세요.",
+        "data": {
+          "kocom_ip": "월패드 서버 IP",
+          "kocom_username": "코콤 아이디",
+          "kocom_password": "코콤 비밀번호",
+          "kocom_update_interval": "조회 주기 (초)"
         }
       }
     },
     "error": {
-      "invalid_room_key": "URL에서 RoomKey를 찾지 못했습니다.",
-      "invalid_time": "시각은 HH:MM 형식이어야 합니다.",
-      "cannot_connect": "고지서 서버에 연결하지 못했습니다.",
-      "parse_failed": "고지서 내용을 해석하지 못했습니다. 설정 → 시스템 → 로그에서 vnrisa_bill 경고를 확인해 주세요."
+      "invalid_auth": "아이디 또는 비밀번호가 올바르지 않습니다.",
+      "cannot_connect": "서버에 연결하지 못했습니다.",
+      "timeout": "서버 응답 시간이 초과되었습니다.",
+      "ip_not_found": "코콤 아이디로 단지 서버 주소를 찾지 못했습니다.",
+      "auth_error": "코콤 로그인에 실패했습니다."
     },
     "abort": {
-      "already_configured": "이미 등록된 호실입니다."
+      "already_configured": "이미 추가되어 있습니다."
     }
   },
   "options": {
     "step": {
       "init": {
-        "title": "확인 시각",
+        "title": "가스 확인 시각",
         "data": {
-          "check_time": "매일 확인 시각 (HH:MM)"
+          "gas_check_time": "매일 확인 시각 (HH:MM)"
         }
       }
     },
     "error": {
       "invalid_time": "시각은 HH:MM 형식이어야 합니다."
-    }
-  },
-  "services": {
-    "refresh": {
-      "name": "고지서 즉시 조회",
-      "description": "예약 시간과 관계없이 지금 고지서를 다시 조회합니다."
     }
   }
 }
