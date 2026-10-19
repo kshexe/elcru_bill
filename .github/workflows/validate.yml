@@ -8,17 +8,12 @@ on:
     - cron: "0 0 * * *"
   workflow_dispatch:
 
+# hacs/action도 있지만 그건 "공개 HACS 기본 저장소 등록" 심사 기준(라이선스 파일,
+# GitHub 토픽, 브랜드 아이콘 등)까지 검사한다 - 이 repo는 커스텀 저장소로만 쓰므로
+# 해당 없는 실패만 늘어나 hassfest만 남긴다.
 jobs:
   hassfest:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
       - uses: home-assistant/actions/hassfest@master
-
-  hacs:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@v4
-      - uses: hacs/action@main
-        with:
-          category: integration
