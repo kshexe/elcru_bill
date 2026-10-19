@@ -23,6 +23,7 @@ import aiohttp
 
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 
@@ -68,9 +69,9 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
 
     stored_url = await runtime.url_store.async_load()
     if stored_url:
-        await async_refresh_bill(entry, stored_url)
+        await async_refresh_bill(hass, entry, stored_url)
 
-    await async_refresh_gas(entry)  # 설치/재시작 직후 바로 한 번 조회
+    await async_refresh_gas(hass, entry)  # 설치/재시작 직후 바로 한 번 조회
 
     from .sensor import restore_orphaned_sensors  # 순환 임포트 방지용 지연 임포트
 
@@ -83,7 +84,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     hour, minute = (int(x) for x in check_time.split(":"))
 
     async def _gas_scheduled(_now) -> None:
-        await async_refresh_gas(entry)
+        await async_refresh_gas(hass, entry)
 
     entry.async_on_unload(
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
@@ -102,7 +103,7 @@ async def async_unload_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> b
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_refresh_bill(entry: VnrisaConfigEntry, url: str) -> bool:
+async def async_refresh_bill(hass: HomeAssistant, entry: VnrisaConfigEntry, url: str) -> bool:
     """고지서 링크를 조회해서 센서에 반영하고, 성공하면 Store에 저장해 다음 재시작 때도
     자동으로 다시 쓸 수 있게 한다. text.py(사용자가 직접 입력)와 여기(재시작 시 자동
     재조회) 양쪽에서 같이 쓰는 공용 함수."""
@@ -111,21 +112,25 @@ async def async_refresh_bill(entry: VnrisaConfigEntry, url: str) -> bool:
 
     runtime = entry.runtime_data
     runtime.url = url
+    issue_id = f"{entry.entry_id}_bill_fetch_failed"
     try:
         data = await fetch_bill(url)
     except (aiohttp.ClientError, TimeoutError) as err:
         _LOGGER.warning("고지서 조회 실패: %s", err)
         runtime.error = f"조회 실패: {err}"
+        _create_fetch_issue(hass, issue_id, "bill_fetch_failed", str(err))
         return False
 
     if not data.get("month") or not data.get("summary"):
         _LOGGER.warning("고지서 항목을 찾지 못함 (페이지 구조 변경 또는 잘못된 링크)")
         runtime.error = "고지서 항목을 찾지 못함 - 링크가 올바른지 확인하세요"
+        _create_fetch_issue(hass, issue_id, "bill_fetch_failed", runtime.error)
         return False
 
     runtime.error = None
     runtime.data = data
     sync_item_sensors(entry, data)
+    ir.async_delete_issue(hass, DOMAIN, issue_id)
     if runtime.bill_timestamp_sensor is not None:
         runtime.bill_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     if runtime.url_store is not None:
@@ -133,12 +138,13 @@ async def async_refresh_bill(entry: VnrisaConfigEntry, url: str) -> bool:
     return True
 
 
-async def async_refresh_gas(entry: VnrisaConfigEntry) -> None:
+async def async_refresh_gas(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
     """entry.data에 저장된 아이디/비밀번호로 로그인해서 고지/수납내역을 전부 조회해
     센서에 반영한다."""
     from .sensor import sync_gas_sensors  # 순환 임포트 방지용 지연 임포트
 
     runtime = entry.runtime_data
+    issue_id = f"{entry.entry_id}_gas_login_failed"
     member_id = entry.data.get(CONF_GAS_MEMBER_ID)
     member_pwd = entry.data.get(CONF_GAS_MEMBER_PWD)
     if not member_id or not member_pwd:
@@ -149,13 +155,30 @@ async def async_refresh_gas(entry: VnrisaConfigEntry) -> None:
     except GasLoginError as err:
         _LOGGER.warning("도시가스 로그인/조회 실패: %s", err)
         runtime.gas_error = str(err)
+        _create_fetch_issue(hass, issue_id, "gas_login_failed", str(err))
         return
     except (aiohttp.ClientError, TimeoutError) as err:
         _LOGGER.warning("도시가스 조회 중 통신 오류: %s", err)
         runtime.gas_error = f"조회 실패: {err}"
+        _create_fetch_issue(hass, issue_id, "gas_login_failed", str(err))
         return
 
     runtime.gas_error = None
     sync_gas_sensors(entry, rows)
+    ir.async_delete_issue(hass, DOMAIN, issue_id)
     if runtime.gas_timestamp_sensor is not None:
         runtime.gas_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+def _create_fetch_issue(hass: HomeAssistant, issue_id: str, translation_key: str, error: str) -> None:
+    """조회 실패를 로그에만 남기면 조용히 계속 실패해도 못 알아채서, 설정 > 수리
+    항목으로 바로 눈에 띄게 한다 - 다음 조회가 성공하면 호출한 쪽에서 지운다."""
+    ir.async_create_issue(
+        hass,
+        DOMAIN,
+        issue_id,
+        is_fixable=False,
+        severity=ir.IssueSeverity.WARNING,
+        translation_key=translation_key,
+        translation_placeholders={"error": error},
+    )

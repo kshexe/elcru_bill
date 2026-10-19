@@ -69,4 +69,4 @@ class VnrisaLinkText(TextEntity, RestoreEntity):
         self._runtime.url = value
         self.async_write_ha_state()
         if value:
-            await async_refresh_bill(self._entry, value)
+            await async_refresh_bill(self.hass, self._entry, value)

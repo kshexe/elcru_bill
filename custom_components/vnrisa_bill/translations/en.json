@@ -79,5 +79,19 @@
       "ip_not_found": "Could not find the complex server address for this Kocom ID.",
       "auth_error": "Kocom login failed."
     }
+  },
+  "issues": {
+    "bill_fetch_failed": {
+      "title": "Management bill fetch failed",
+      "description": "Fetching the bill link failed: {error}\n\nIf a new bill is out, try pasting that month's link into the 'Bill link' text entity again. This notification clears automatically once a fetch succeeds."
+    },
+    "gas_login_failed": {
+      "title": "GSE city gas login/fetch failed",
+      "description": "Fetching the gas history failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Gas login. This notification clears automatically once a fetch succeeds."
+    },
+    "kocom_auth_failed": {
+      "title": "Kocom Energy authentication failed",
+      "description": "Authenticating with the Kocom wall-pad server failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Kocom Energy login. This notification clears automatically once a fetch succeeds."
+    }
   }
 }

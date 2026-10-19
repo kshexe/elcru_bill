@@ -17,6 +17,7 @@ from datetime import timedelta
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
@@ -82,6 +83,7 @@ async def async_setup_kocom_entry(
         return
 
     update_interval = entry.data.get(CONF_KOCOM_UPDATE_INTERVAL)
+    issue_id = f"{entry.entry_id}_kocom_auth_failed"
 
     async def async_update_kocom_energy():
         _LOGGER.info("==================== 코콤 센서 업데이트 시작 ====================")
@@ -96,9 +98,21 @@ async def async_setup_kocom_entry(
             energy_response_dict = await api.get_energy_data()
             now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
             _LOGGER.info("코콤 센서 업데이트, 시각: %s, 응답: %s", now, energy_response_dict)
+            ir.async_delete_issue(hass, DOMAIN, issue_id)
             return energy_response_dict
         except Exception as e:  # noqa: BLE001
+            # 로그에만 남기면 조용히 계속 실패해도 못 알아채서, 설정 > 수리 항목으로
+            # 바로 눈에 띄게 한다 - 다음 조회가 성공하면 위에서 자동으로 지워진다.
             _LOGGER.error("코콤 센서 업데이트 오류: %s", e)
+            ir.async_create_issue(
+                hass,
+                DOMAIN,
+                issue_id,
+                is_fixable=False,
+                severity=ir.IssueSeverity.ERROR,
+                translation_key="kocom_auth_failed",
+                translation_placeholders={"error": str(e)},
+            )
             return {}
 
     coordinator = DataUpdateCoordinator(

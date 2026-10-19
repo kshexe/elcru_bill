@@ -7,8 +7,9 @@
   "iot_class": "cloud_polling",
   "issue_tracker": "https://github.com/kshexe/elcru_bill/issues",
   "requirements": [
-    "beautifulsoup4>=4.12"
+    "beautifulsoup4>=4.12",
+    "python-dateutil>=2.8"
   ],
   "single_config_entry": true,
-  "version": "4.2.1"
+  "version": "4.3.0"
 }
