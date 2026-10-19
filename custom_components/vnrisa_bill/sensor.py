@@ -16,9 +16,9 @@
 
 프로미넌트(기본 카테고리, 기기 카드 상단)로 남는 건 코콤의 전기/가스/수도 사용량
 3개뿐이다(kocom_sensor.py) - 실시간 로컬 월패드 값이라 가장 "지금" 상황을 보여주는
-대표값으로 쓴다. vnrisa/GSE 쪽은 전부 구성으로 내려가고(조회시각 3개만 진단에 남음 -
-VnrisaTimestampSensor), 서로 이름이 겹치는 항목이 많아서(예: 전기 사용량이
-vnrisa/코콤 양쪽에 있음) 전부 "(vnrisa)"/"(GSE)" 출처 태그를 붙인다.
+대표값으로 쓴다. vnrisa/GSE 쪽은 전부 진단으로 내려가고, 서로 이름이 겹치는 항목이
+많아서(예: 전기 사용량이 vnrisa/코콤 양쪽에 있음) 전부 "(vnrisa)"/"(GSE)" 출처 태그를
+붙인다.
 """
 from __future__ import annotations
 
@@ -236,12 +236,17 @@ class VnrisaTimestampSensor(RestoreEntity, SensorEntity):
 
 
 class VnrisaItemSensor(RestoreEntity, SensorEntity):
-    """vnrisa 관리비/GSE 가스 출처 센서는 전부 구성 카테고리 - 조회시각 3개만 진단에
-    남기고(VnrisaTimestampSensor), 상단에 바로 보이는 건 코콤의 전기/가스/수도
-    사용량 3개뿐이다(kocom_sensor.py, 이 클래스를 안 씀)."""
+    """vnrisa 관리비/GSE 가스 출처 센서는 전부 진단 카테고리 - 상단에 바로 보이는 건
+    코콤의 전기/가스/수도 사용량 3개뿐이다(kocom_sensor.py, 이 클래스를 안 씀).
+
+    구성(CONFIG)으로 옮겨봤다가 전부 "사용할 수 없음"이 됐었다 - HA가 SensorEntity는
+    구성 카테고리로 추가하는 것 자체를 거부한다(homeassistant/components/sensor/
+    __init__.py에서 하드코딩된 검증, "cannot be added as the entity category is set
+    to config"). 구성은 switch/number/select/text처럼 사용자가 직접 값을 바꾸는
+    엔티티 전용이라 읽기 전용 센서에는 애초에 쓸 수 없다."""
 
     _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.CONFIG
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, entry: VnrisaConfigEntry, key: str, item: dict[str, Any], month: str | None) -> None:
         self._attr_name = item.get("display_name", key)
