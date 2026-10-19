@@ -22,11 +22,13 @@
 """
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
@@ -92,68 +94,58 @@ def flatten_bill_items(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
         add(f"{name} 사용량", u.get("value"), u.get("unit"), {})
 
     for name, m in data.get("meters", {}).items():
-        add(f"{name} 계량기 지침", m.get("당월"), None, {"전월": m.get("전월")})
+        # ⊙전기/⊙냉수/⊙온수/⊙급탕 헤더 - 전기만 kWh, 나머지(물 계량기)는 전부 "톤"
+        # 단위라 m³로 표시(사용량 센서의 _UNIT_MAP과 동일한 환산).
+        unit = "kWh" if name == "전기" else "m³"
+        add(f"{name} 계량기 지침", m.get("당월"), unit, {"전월": m.get("전월")})
 
     return items
 
 
-async def _save_item_meta(entry: VnrisaConfigEntry, namespace: str, items: dict[str, dict[str, Any]]) -> None:
-    """키마다 display_name/unit만 따로 Store에 쌓아둔다 - 선거관리운영비처럼 특정 달에만
-    잠깐 나오는 항목은 그 달이 지나면 최신 고지서 조회 결과엔 더는 없어서, 이 메타
-    기록이 없으면 재시작 후 엔티티 자체가 다시 안 만들어져 recorder에 남은 history를
-    복원할 기회조차 없어진다(restore_missing_item_sensors가 이걸로 껍데기를 되살림)."""
-    runtime = entry.runtime_data
-    if runtime.item_meta_store is None:
-        return
-    meta = await runtime.item_meta_store.async_load() or {}
-    ns = meta.setdefault(namespace, {})
-    changed = False
-    for key, item in items.items():
-        entry_meta = {"display_name": item.get("display_name", key), "unit": item.get("unit")}
-        if ns.get(key) != entry_meta:
-            ns[key] = entry_meta
-            changed = True
-    if changed:
-        await runtime.item_meta_store.async_save(meta)
+_GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
+_TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
 
 
-async def restore_missing_item_sensors(entry: VnrisaConfigEntry) -> None:
-    """재시작 직후엔 가장 최근 고지서/가스 조회 결과에 실제로 들어있는 항목만 엔티티로
-    만들어진다 - 그래서 선거관리운영비처럼 어쩌다 한두 달만 나오는 항목은 최신 조회엔
-    없으니 이번 세션엔 엔티티조차 안 만들어지고, "unavailable" 상태로 남아 history
-    속성도 안 보이게 된다. 지금까지 한 번이라도 본 적 있는 모든 항목(메타 Store에
-    쌓인 전부)을 값 없는 껍데기로 다시 만들어줘서, RestoreEntity가 recorder에 남은
-    마지막 값과 history를 정상적으로 복원할 기회를 준다."""
+async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
+    """선거관리운영비처럼 어쩌다 한두 달만 나오는 항목은, 재시작 직후 가장 최근 고지서
+    조회에 그 항목이 없으면 이번 세션엔 엔티티 자체가 안 만들어져 "unavailable"로
+    남고 history 속성도 안 보인다. 그 항목이 예전에 한 번이라도 있었다는 사실은 엔티티
+    레지스트리에 영구히 남아있으니(별도 Store 없이도), 거기 등록된 전부를 훑어서 이번
+    조회에 없는 건 값 없는 껍데기로 다시 만들어 RestoreEntity가 recorder에 남은 마지막
+    값/history를 복원할 기회를 준다."""
     runtime = entry.runtime_data
-    if runtime.item_meta_store is None:
-        return
-    meta = await runtime.item_meta_store.async_load() or {}
+    registry = er.async_get(hass)
+    kocom_prefix = f"{entry.entry_id}_kocom_"
+    skip_suffixes = ("_bill_timestamp", "_gas_timestamp")
     new_entities = []
-    for namespace, sensors in (("bill", runtime.item_sensors), ("gas", runtime.gas_sensors)):
-        for key, item_meta in meta.get(namespace, {}).items():
-            if key in sensors:
-                continue
-            stub_item = {
-                "display_name": item_meta.get("display_name", key),
-                "value": None,
-                "unit": item_meta.get("unit"),
-                "attrs": {},
-            }
-            sensor = VnrisaItemSensor(entry, key, stub_item, None)
-            sensors[key] = sensor
-            new_entities.append(sensor)
+    for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
+        if reg_entry.domain != "sensor" or reg_entry.platform != DOMAIN:
+            continue
+        uid = reg_entry.unique_id
+        if uid.startswith(kocom_prefix) or uid.endswith(skip_suffixes):
+            continue
+        key = _TAG_RE.sub("", reg_entry.original_name or uid)
+        is_gas = key in _GAS_KEYS
+        sensors = runtime.gas_sensors if is_gas else runtime.item_sensors
+        if key in sensors:
+            continue
+        tag = "(GSE)" if is_gas else "(vnrisa)"
+        stub_item = {"display_name": f"{key} {tag}", "value": None, "unit": None, "attrs": {}}
+        sensor = VnrisaItemSensor(entry, key, stub_item, None)
+        sensor._attr_unique_id = uid  # slugify(key)가 등록된 값과 다를 수 있어 그대로 맞춰씀
+        sensors[key] = sensor
+        new_entities.append(sensor)
     if new_entities and runtime.add_sensor_entities is not None:
         runtime.add_sensor_entities(new_entities)
 
 
-async def sync_item_sensors(entry: VnrisaConfigEntry, data: dict[str, Any]) -> None:
+def sync_item_sensors(entry: VnrisaConfigEntry, data: dict[str, Any]) -> None:
     """고지서 데이터를 받아서, 없는 항목은 새 센서로 추가하고 있는 항목은 값을 갱신(또는
     과거 달이면 history에만 추가)한다."""
     runtime = entry.runtime_data
     month = data.get("month")
     new_entities = []
-    items = flatten_bill_items(data)
-    for key, item in items.items():
+    for key, item in flatten_bill_items(data).items():
         existing = runtime.item_sensors.get(key)
         if existing is None:
             sensor = VnrisaItemSensor(entry, key, item, month)
@@ -163,10 +155,9 @@ async def sync_item_sensors(entry: VnrisaConfigEntry, data: dict[str, Any]) -> N
             existing.set_value(item, month)
     if new_entities and runtime.add_sensor_entities is not None:
         runtime.add_sensor_entities(new_entities)
-    await _save_item_meta(entry, "bill", items)
 
 
-async def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> None:
+def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> None:
     """도시가스 로그인 조회 결과(gas.py의 fetch_gas_history - 여러 달치 한번에)를
     가스 사용량/청구금액/납부금액/계량기 지침 센서에 반영. 각 달이 VnrisaItemSensor에
     그대로 들어가므로(이미 history 병합 로직이 있음) 월 순서와 무관하게 안전하게
@@ -215,10 +206,6 @@ async def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]])
                 existing.set_value(item, month)
     if new_entities and runtime.add_sensor_entities is not None:
         runtime.add_sensor_entities(new_entities)
-    if rows:
-        # 매달 키가 동일(가스 사용량/청구금액/납부금액/계량기 지침)해서 마지막 달의
-        # items 하나만 저장해도 충분하다.
-        await _save_item_meta(entry, "gas", items)
 
 
 class VnrisaTimestampSensor(RestoreEntity, SensorEntity):

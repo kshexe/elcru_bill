@@ -58,16 +58,10 @@ class VnrisaRuntimeData:
     gas_sensors: dict[str, Any] = field(default_factory=dict)
     gas_timestamp_sensor: Any = None
 
-    # 항목별 display_name/unit만 따로 쌓아두는 메타 Store - 선거관리운영비처럼
-    # 특정 달에만 나오는 항목도 재시작 후 다시 엔티티로 복원할 수 있게 한다
-    # (sensor.py의 restore_missing_item_sensors가 사용).
-    item_meta_store: Store | None = None
-
 
 async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bool:
     runtime = VnrisaRuntimeData()
     runtime.url_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_bill_url")
-    runtime.item_meta_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_item_meta")
     entry.runtime_data = runtime
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -78,12 +72,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
 
     await async_refresh_gas(entry)  # 설치/재시작 직후 바로 한 번 조회
 
-    from .sensor import restore_missing_item_sensors  # 순환 임포트 방지용 지연 임포트
+    from .sensor import restore_orphaned_sensors  # 순환 임포트 방지용 지연 임포트
 
     # 이번 세션 조회 결과엔 없지만(예: 선거관리운영비처럼 특정 달에만 나오는 항목)
-    # 전에 한 번이라도 본 적 있는 항목은 값 없는 껍데기로 다시 만들어, recorder에
-    # 남은 마지막 값/history를 복원할 기회를 준다.
-    await restore_missing_item_sensors(entry)
+    # 엔티티 레지스트리에 전에 등록된 적 있는 항목은 값 없는 껍데기로 다시 만들어,
+    # recorder에 남은 마지막 값/history를 복원할 기회를 준다.
+    await restore_orphaned_sensors(hass, entry)
 
     check_time = entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
     hour, minute = (int(x) for x in check_time.split(":"))
@@ -131,7 +125,7 @@ async def async_refresh_bill(entry: VnrisaConfigEntry, url: str) -> bool:
 
     runtime.error = None
     runtime.data = data
-    await sync_item_sensors(entry, data)
+    sync_item_sensors(entry, data)
     if runtime.bill_timestamp_sensor is not None:
         runtime.bill_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
     if runtime.url_store is not None:
@@ -162,6 +156,6 @@ async def async_refresh_gas(entry: VnrisaConfigEntry) -> None:
         return
 
     runtime.gas_error = None
-    await sync_gas_sensors(entry, rows)
+    sync_gas_sensors(entry, rows)
     if runtime.gas_timestamp_sensor is not None:
         runtime.gas_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
