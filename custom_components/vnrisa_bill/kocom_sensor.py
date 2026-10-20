@@ -286,7 +286,8 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             old_seed_version = attrs.get("history_seed_version", 0)
             if self._sensor_type != "electricity" or old_seed_version >= _HISTORY_SEED_VERSION:
                 for month, value in dict(attrs.get("history", {}) or {}).items():
-                    self._history.setdefault(month, value)
+                    # 예전 버전에서 소수점으로 저장된 값도 복원하면서 정수로 맞춘다.
+                    self._history.setdefault(month, _round_half_up(value))
             # else: 전기인데 구버전(옛 소스 기반) 시드라 그 history는 버리고 아래에서
             # 검증된 소스로 통째로 새로 채운다.
 
