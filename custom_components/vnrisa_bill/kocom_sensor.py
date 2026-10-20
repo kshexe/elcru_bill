@@ -67,7 +67,15 @@ async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float] | N
         change = row.get("change")
         if change is None or change < 0:
             continue
-        start_dt = datetime.datetime.fromtimestamp(row["start"] / 1000, tz=datetime.timezone.utc)
+        raw_start = row["start"]
+        if isinstance(raw_start, datetime.datetime):
+            # recorder.statistics.statistics_during_period()을 직접 부르면 datetime
+            # 객체로 온다 - WS API(recorder/statistics_during_period)가 밀리초 정수로
+            # 바꿔 내려주는 건 그쪽 JSON 응답 포맷일 뿐, 내부 함수 리턴값은 다르다.
+            # 숫자인 줄 알고 1000으로 나누면 전부 1970년 근처로 뭉친다(실제 겪은 버그).
+            start_dt = raw_start if raw_start.tzinfo else raw_start.replace(tzinfo=datetime.timezone.utc)
+        else:
+            start_dt = datetime.datetime.fromtimestamp(raw_start, tz=datetime.timezone.utc)
         monthly[start_dt.strftime("%Y-%m")] += change
     _LOGGER.warning("과거 전기 사용량 통계 복원 결과: %d개월", len(monthly))
     return dict(monthly)
