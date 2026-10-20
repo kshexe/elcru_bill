@@ -45,18 +45,22 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
-async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float]:
+async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float] | None:
     """_OLD_ELECTRICITY_STATISTIC_ID의 일별 장기통계에서 월별 사용량을 복원한다. 기기가
     재연결되며 리셋된 날은 하루치에 음수 delta가 몰려 찍히는데, 그 날짜 하루만 버리고
-    (그 달 전체를 버리지 않고) 나머지로 월별 합을 만든다."""
+    (그 달 전체를 버리지 않고) 나머지로 월별 합을 만든다.
+
+    오류가 나면 None을 돌려줘서(호출한 쪽이 history_seeded를 True로 고정하지 않게) 다음
+    재시작에 다시 시도하게 한다 - 통계 자체가 없는 설치(이 집 외 다른 사람)에서는 빈
+    dict({})가 정상적으로 돌아오고, 그건 재시도해도 의미 없으니 그대로 seeded 처리한다."""
     start = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
     try:
         rows = await get_instance(hass).async_add_executor_job(
             statistics_during_period, hass, start, None, {_OLD_ELECTRICITY_STATISTIC_ID}, "day", None, {"change"}
         )
     except Exception as e:  # noqa: BLE001
-        _LOGGER.debug("과거 전기 사용량 통계 복원 건너뜀: %s", e)
-        return {}
+        _LOGGER.warning("과거 전기 사용량 통계 복원 실패(다음 재시작에 재시도): %s", e)
+        return None
 
     monthly: dict[str, float] = defaultdict(float)
     for row in rows.get(_OLD_ELECTRICITY_STATISTIC_ID, []):
@@ -65,6 +69,7 @@ async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float]:
             continue
         start_dt = datetime.datetime.fromtimestamp(row["start"] / 1000, tz=datetime.timezone.utc)
         monthly[start_dt.strftime("%Y-%m")] += change
+    _LOGGER.warning("과거 전기 사용량 통계 복원 결과: %d개월", len(monthly))
     return dict(monthly)
 
 # 전기/가스/수도만 상단에 바로 보이고, 나머지(진단용 조회시각)는 진단 카테고리로
@@ -216,10 +221,11 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         if self._sensor_type == "electricity" and not self._history_seeded:
             seeded = await _seed_electricity_history(self.hass)
-            for month, value in seeded.items():
-                self._history.setdefault(month, round(value, 1))
-            self._history_seeded = True
-            self.async_write_ha_state()
+            if seeded is not None:
+                for month, value in seeded.items():
+                    self._history.setdefault(month, round(value, 1))
+                self._history_seeded = True
+                self.async_write_ha_state()
 
     def _handle_coordinator_update(self) -> None:
         if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
