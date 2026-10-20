@@ -9,23 +9,63 @@ vnrisa 관리비/GSE 가스와 달리 자체 DataUpdateCoordinator로 폴링한�
 """
 from __future__ import annotations
 
+from collections import defaultdict
 import datetime
 import logging
 import math
 from datetime import timedelta
 
+from homeassistant.components.recorder import get_instance
+from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
+from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
 from .const import CONF_KOCOM_IP, CONF_KOCOM_PASSWORD, CONF_KOCOM_UPDATE_INTERVAL, CONF_KOCOM_USERNAME, DOMAIN
 from .kocom_api import KocomAPI
 
 _LOGGER = logging.getLogger(__name__)
+
+# 이 집에서 코콤/엘크루 공과금이 생기기 전부터(2024년초~) 전기 사용량을 따로 추적하던
+# 더 오래된 엔티티 - 가스/수도엔 이런 긴 과거 기록이 없어 전기만 해당. 한 번만
+# history에 심어주는 용도라, 이 통계가 없는 환경(다른 설치)에서는 조용히 그냥 건너뛴다.
+_OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongiyogeum_kwhto_kwh"
+
+
+def _month_offset(month: str, delta_months: int) -> str:
+    """'YYYY-MM' 문자열에서 delta_months만큼 이동한 'YYYY-MM'을 돌려준다(음수=과거)."""
+    year, mon = int(month[:4]), int(month[5:7])
+    total = year * 12 + (mon - 1) + delta_months
+    y, m = divmod(total, 12)
+    return f"{y:04d}-{m + 1:02d}"
+
+
+async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float]:
+    """_OLD_ELECTRICITY_STATISTIC_ID의 일별 장기통계에서 월별 사용량을 복원한다. 기기가
+    재연결되며 리셋된 날은 하루치에 음수 delta가 몰려 찍히는데, 그 날짜 하루만 버리고
+    (그 달 전체를 버리지 않고) 나머지로 월별 합을 만든다."""
+    start = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
+    try:
+        rows = await get_instance(hass).async_add_executor_job(
+            statistics_during_period, hass, start, None, {_OLD_ELECTRICITY_STATISTIC_ID}, "day", None, {"change"}
+        )
+    except Exception as e:  # noqa: BLE001
+        _LOGGER.debug("과거 전기 사용량 통계 복원 건너뜀: %s", e)
+        return {}
+
+    monthly: dict[str, float] = defaultdict(float)
+    for row in rows.get(_OLD_ELECTRICITY_STATISTIC_ID, []):
+        change = row.get("change")
+        if change is None or change < 0:
+            continue
+        start_dt = datetime.datetime.fromtimestamp(row["start"] / 1000, tz=datetime.timezone.utc)
+        monthly[start_dt.strftime("%Y-%m")] += change
+    return dict(monthly)
 
 # 전기/가스/수도만 상단에 바로 보이고, 나머지(진단용 조회시각)는 진단 카테고리로
 # 내려간다 - vnrisa/GSE 쪽과 같은 기준.
@@ -132,8 +172,9 @@ async def async_setup_kocom_entry(
     async_add_entities(sensors)
 
 
-class KocomEnergySensor(CoordinatorEntity, SensorEntity):
-    """원본 KocomEnergySensor와 동일한 로직 - device_info만 공용 기기로 변경."""
+class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """원본 KocomEnergySensor와 동일한 로직 - device_info만 공용 기기로 변경하고,
+    전기/가스/수도 사용량엔 월별 history(+전월/작년 속성)를 추가했다."""
 
     _attr_has_entity_name = True
 
@@ -155,6 +196,42 @@ class KocomEnergySensor(CoordinatorEntity, SensorEntity):
         self._previous_electricity_this_month = None
         self._previous_electricity_usage_last_month = None
         self._previous_electricity_last_month = None
+
+        # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago를
+        # 월별로 쌓아서 history로 만든다. 전기만 추가로 2년치를 한 번 복원해온다.
+        self._history: dict[str, float] = {}
+        self._history_seeded = False
+
+    async def async_added_to_hass(self) -> None:
+        await super().async_added_to_hass()
+        if self._sensor_type not in _PROMINENT_TYPES:
+            return
+
+        last_state = await self.async_get_last_state()
+        if last_state is not None:
+            attrs = last_state.attributes or {}
+            for month, value in dict(attrs.get("history", {}) or {}).items():
+                self._history.setdefault(month, value)
+            self._history_seeded = bool(attrs.get("history_seeded", False))
+
+        if self._sensor_type == "electricity" and not self._history_seeded:
+            seeded = await _seed_electricity_history(self.hass)
+            for month, value in seeded.items():
+                self._history.setdefault(month, round(value, 1))
+            self._history_seeded = True
+            self.async_write_ha_state()
+
+    def _handle_coordinator_update(self) -> None:
+        if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
+            for month_key, usage_key in (
+                ("last_month", f"{self._sensor_type}_usage_last_month"),
+                ("two_months_ago", f"{self._sensor_type}_usage_two_months_ago"),
+            ):
+                month = self.coordinator.data.get(month_key)
+                usage = self.coordinator.data.get(usage_key)
+                if month and usage is not None:
+                    self._history[month] = usage
+        super()._handle_coordinator_update()
 
     @property
     def native_value(self):
@@ -209,4 +286,18 @@ class KocomEnergySensor(CoordinatorEntity, SensorEntity):
     def extra_state_attributes(self) -> dict:
         if self._sensor_type == "energy":
             return self.coordinator.data or {}
-        return {}
+        if self._sensor_type not in _PROMINENT_TYPES:
+            return {}
+
+        attrs: dict = {"history": dict(sorted(self._history.items()))}
+        if self._sensor_type == "electricity":
+            attrs["history_seeded"] = self._history_seeded
+        this_month = (self.coordinator.data or {}).get("this_month")
+        if this_month:
+            last_m = _month_offset(this_month, -1)
+            year_m = _month_offset(this_month, -12)
+            if last_m in self._history:
+                attrs["전월"] = self._history[last_m]
+            if year_m in self._history:
+                attrs["작년"] = self._history[year_m]
+        return attrs

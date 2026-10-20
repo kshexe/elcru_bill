@@ -103,7 +103,17 @@ def flatten_bill_items(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
 
 
 _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
+_USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
+
+
+def _month_offset(month: str, delta_months: int) -> str:
+    """'YYYY-MM' 문자열에서 delta_months만큼 이동한 'YYYY-MM'을 돌려준다(음수=과거) -
+    kocom_sensor.py에도 같은 함수가 있다(공용 모듈 없이 각자 둠)."""
+    year, mon = int(month[:4]), int(month[5:7])
+    total = year * 12 + (mon - 1) + delta_months
+    y, m = divmod(total, 12)
+    return f"{y:04d}-{m + 1:02d}"
 
 
 async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
@@ -249,6 +259,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
     _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(self, entry: VnrisaConfigEntry, key: str, item: dict[str, Any], month: str | None) -> None:
+        self._key = key
         self._attr_name = item.get("display_name", key)
         self._attr_unique_id = f"{entry.entry_id}_{slugify(key)}"
         self._attr_device_info = _device_info(entry)
@@ -257,6 +268,18 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         self._history: dict[str, Any] = {}
         self._regular_attrs: dict[str, Any] = {}
         self.set_value(item, month)
+
+    def _build_extra_attrs(self) -> dict[str, Any]:
+        attrs = dict(self._regular_attrs)
+        if self._key in _USAGE_KEYS and self._latest_month:
+            last_m = _month_offset(self._latest_month, -1)
+            year_m = _month_offset(self._latest_month, -12)
+            if last_m in self._history:
+                attrs["전월"] = self._history[last_m]
+            if year_m in self._history:
+                attrs["작년"] = self._history[year_m]
+        attrs["history"] = dict(sorted(self._history.items()))
+        return attrs
 
     async def async_added_to_hass(self) -> None:
         """재시작 시 __init__.py가 가장 최근 링크 하나만 자동 재조회해서 '이번 세션에
@@ -284,10 +307,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
             self._regular_attrs = old_attrs
             self._latest_month = max(self._history) if self._history else None
 
-        self._attr_extra_state_attributes = {
-            **self._regular_attrs,
-            "history": dict(sorted(self._history.items())),
-        }
+        self._attr_extra_state_attributes = self._build_extra_attrs()
         if self.hass is not None:
             self.async_write_ha_state()
 
@@ -303,9 +323,6 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
             self._attr_native_value = item.get("value")
             self._regular_attrs = {k: v for k, v in item.get("attrs", {}).items() if v is not None}
 
-        self._attr_extra_state_attributes = {
-            **self._regular_attrs,
-            "history": dict(sorted(self._history.items())),
-        }
+        self._attr_extra_state_attributes = self._build_extra_attrs()
         if self.hass is not None:
             self.async_write_ha_state()
