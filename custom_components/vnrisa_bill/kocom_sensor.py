@@ -65,6 +65,13 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
+def _round_half_up(value: float | None) -> int | None:
+    """예전 "...(반올림)" 도우미들과 같은 반올림 방식(음수 없는 사용량 전제) - 코콤이
+    소수점 1자리까지 주는 값을 정수로 보여준다. history 자체는 원래 정밀도를 유지하고,
+    화면에 보이는 값만 반올림한다."""
+    return int(value + 0.5) if value is not None else None
+
+
 def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 24) -> None:
     """2년(24개월)이면 "작년" 조회에 충분해서, 그보다 오래된 기록은 계속 쌓아두지 않고
     지운다."""
@@ -349,7 +356,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 self._previous_electricity_last_month = self.coordinator.data.get("last_month")
                 self._previous_electricity_usage_this_month = current_usage
                 self._previous_electricity_this_month = this_month
-                return current_usage
+                return _round_half_up(current_usage)
 
             elif self._sensor_type == "gas":
                 current_usage = self.coordinator.data.get("gas_usage_this_month")
@@ -359,7 +366,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             _LOGGER.error("%s 센서 데이터 처리 중 오류 발생: %s", self._sensor_type, e)
             return None
 
-        return current_usage
+        return _round_half_up(current_usage)
 
     @property
     def extra_state_attributes(self) -> dict:
@@ -418,5 +425,5 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
             return None
         history = self._source._history
         if self._kind == "last_month":
-            return history.get(_month_offset(this_month, -1))
-        return _nearest_year_ago(history, this_month)
+            return _round_half_up(history.get(_month_offset(this_month, -1)))
+        return _round_half_up(_nearest_year_ago(history, this_month))
