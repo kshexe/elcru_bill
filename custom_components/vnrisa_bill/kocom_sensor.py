@@ -14,6 +14,7 @@ import datetime
 import logging
 import math
 from datetime import timedelta
+from typing import Any
 
 from homeassistant.components.recorder import get_instance
 from homeassistant.components.recorder.statistics import statistics_during_period
@@ -52,6 +53,15 @@ def _month_offset(month: str, delta_months: int) -> str:
     total = year * 12 + (mon - 1) + delta_months
     y, m = divmod(total, 12)
     return f"{y:04d}-{m + 1:02d}"
+
+
+def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
+    """기존 "전기 작년사용량" SQL 도우미와 똑같은 방식 - 정확히 "작년 같은 달"만 고집하지
+    않고, 11개월 전 이전 중 가장 최근 값을 쓴다. 기기가 꺼져있던 달이 껴 있어도(이 집은
+    2025-10이 그런 경우) 그보다 조금 더 과거의 값으로 자연스럽게 대체된다."""
+    threshold = _month_offset(this_month, -11)
+    candidates = [m for m in history if m <= threshold]
+    return history[max(candidates)] if candidates else None
 
 
 async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float] | None:
@@ -318,9 +328,9 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
         if this_month:
             last_m = _month_offset(this_month, -1)
-            year_m = _month_offset(this_month, -12)
             if last_m in self._history:
                 attrs["전월"] = self._history[last_m]
-            if year_m in self._history:
-                attrs["작년"] = self._history[year_m]
+            year_ago = _nearest_year_ago(self._history, this_month)
+            if year_ago is not None:
+                attrs["작년"] = year_ago
         return attrs

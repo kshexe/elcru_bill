@@ -116,6 +116,14 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
+def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
+    """기존 "전기 작년사용량" SQL 도우미와 같은 방식 - 정확히 "작년 같은 달"만 고집하지
+    않고, 11개월 전 이전 중 가장 최근 값을 쓴다(데이터 공백이 있어도 자연스럽게 대체)."""
+    threshold = _month_offset(this_month, -11)
+    candidates = [m for m in history if m <= threshold]
+    return history[max(candidates)] if candidates else None
+
+
 async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
     """선거관리운영비처럼 어쩌다 한두 달만 나오는 항목은, 재시작 직후 가장 최근 고지서
     조회에 그 항목이 없으면 이번 세션엔 엔티티 자체가 안 만들어져 "unavailable"로
@@ -273,11 +281,11 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         attrs = dict(self._regular_attrs)
         if self._key in _USAGE_KEYS and self._latest_month:
             last_m = _month_offset(self._latest_month, -1)
-            year_m = _month_offset(self._latest_month, -12)
             if last_m in self._history:
                 attrs["전월"] = self._history[last_m]
-            if year_m in self._history:
-                attrs["작년"] = self._history[year_m]
+            year_ago = _nearest_year_ago(self._history, self._latest_month)
+            if year_ago is not None:
+                attrs["작년"] = year_ago
         attrs["history"] = dict(sorted(self._history.items()))
         return attrs
 
