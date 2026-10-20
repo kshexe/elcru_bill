@@ -116,6 +116,14 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
+def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 24) -> None:
+    """2년(24개월)이면 "작년" 조회에 충분해서, 그보다 오래된 기록은 계속 쌓아두지 않고
+    지운다 - kocom_sensor.py에도 같은 함수가 있다."""
+    cutoff = _month_offset(this_month, -keep_months)
+    for month in [m for m in history if m < cutoff]:
+        del history[month]
+
+
 def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
     """정확히 "작년 같은 달"이 있으면 그걸 쓰고, 없을 때만(데이터 공백) 기존 "전기
     작년사용량" SQL 도우미처럼 11개월 전 이전 중 가장 최근 값으로 대체한다."""
@@ -289,6 +297,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
             year_ago = _nearest_year_ago(self._history, self._latest_month)
             if year_ago is not None:
                 attrs["작년"] = year_ago
+            _prune_history(self._history, self._latest_month)
         attrs["history"] = dict(sorted(self._history.items()))
         return attrs
 
