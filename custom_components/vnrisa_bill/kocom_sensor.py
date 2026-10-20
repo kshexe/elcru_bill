@@ -197,11 +197,16 @@ async def async_setup_kocom_entry(
 
     await coordinator.async_config_entry_first_refresh()
 
-    sensors = [
-        KocomEnergySensor(coordinator, entry, sensor_type, sensor_data)
+    main_sensors = {
+        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data)
         for sensor_type, sensor_data in SENSOR_TYPES.items()
+    }
+    history_sensors = [
+        KocomUsageHistorySensor(coordinator, main_sensors[sensor_type], entry, sensor_type, kind)
+        for sensor_type in _PROMINENT_TYPES
+        for kind in ("last_month", "year_ago")
     ]
-    async_add_entities(sensors)
+    async_add_entities([*main_sensors.values(), *history_sensors])
 
 
 class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
@@ -334,3 +339,40 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if year_ago is not None:
                 attrs["작년"] = year_ago
         return attrs
+
+
+_HISTORY_KIND_LABELS = {"last_month": "전월사용량", "year_ago": "작년사용량"}
+_HISTORY_KOCOM_LABELS = {"electricity": "전기", "gas": "가스", "water": "수도"}
+
+
+class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
+    """KocomEnergySensor가 들고 있는 history에서 전월/작년 값만 뽑아 독립된 센서로
+    노출한다 - 속성이 아니라 대시보드/그래프/자동화에서 바로 쓸 수 있게 하기 위함.
+    값 자체는 source(=그 타입의 KocomEnergySensor)가 이미 쌓아둔 history를 그대로
+    읽기만 하므로, 별도 폴링이나 자체 상태 저장이 필요 없다."""
+
+    _attr_has_entity_name = True
+    _attr_entity_category = EntityCategory.DIAGNOSTIC
+
+    def __init__(
+        self, coordinator, source: "KocomEnergySensor", entry: ConfigEntry, sensor_type: str, kind: str
+    ) -> None:
+        super().__init__(coordinator)
+        self._source = source
+        self._kind = kind
+        label = _HISTORY_KIND_LABELS[kind]
+        self._attr_name = f"{_HISTORY_KOCOM_LABELS[sensor_type]} {label}"
+        self._attr_unique_id = f"{entry.entry_id}_kocom_{sensor_type}_{kind}"
+        self._attr_native_unit_of_measurement = source._attr_native_unit_of_measurement
+        self._attr_icon = source._attr_icon
+        self._attr_device_info = _device_info(entry)
+
+    @property
+    def native_value(self):
+        this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
+        if not this_month:
+            return None
+        history = self._source._history
+        if self._kind == "last_month":
+            return history.get(_month_offset(this_month, -1))
+        return _nearest_year_ago(history, this_month)
