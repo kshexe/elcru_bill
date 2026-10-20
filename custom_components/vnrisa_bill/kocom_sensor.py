@@ -9,7 +9,6 @@ vnrisa 관리비/GSE 가스와 달리 자체 DataUpdateCoordinator로 폴링한�
 """
 from __future__ import annotations
 
-from collections import defaultdict
 import datetime
 import logging
 import math
@@ -32,10 +31,21 @@ from .kocom_api import KocomAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-# 이 집에서 코콤/엘크루 공과금이 생기기 전부터(2024년초~) 전기 사용량을 따로 추적하던
-# 더 오래된 엔티티 - 가스/수도엔 이런 긴 과거 기록이 없어 전기만 해당. 한 번만
-# history에 심어주는 용도라, 이 통계가 없는 환경(다른 설치)에서는 조용히 그냥 건너뛴다.
-_OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongiyogeum_kwhto_kwh"
+# 이 집에서 코콤/엘크루 공과금이 생기기 전부터(2024년초~) "전월사용량"을 따로 계산해
+# 쌓아두던 더 오래된 템플릿 센서 - 가스/수도엔 이런 긴 과거 기록이 없어 전기만 해당.
+# 한 번만 history에 심어주는 용도라, 이 통계가 없는 환경(다른 설치)에서는 조용히 그냥
+# 건너뛴다.
+#
+# 처음엔 sensor.jeongiyogeum_kwhto_kwh(더 오래된 원시 계량 엔티티)로 복원했었는데,
+# 실제 2026년 8월 고지서(924kWh)와 비교해보니 그 쪽도, 코콤이 실시간으로 주는
+# electricity_usage_last_month/two_months_ago 필드도 둘 다 틀렸다(코콤 쪽은 거의
+# 정확히 2배인 1837.4 - 실측으로 확인됨). 이 전월사용량(반올림) 템플릿의 과거 기록만
+# 실제 고지서 값과 일치해서 이걸로 바꿨다 - 코콤의 last_month/two_months_ago 필드는
+# history 용도로 더 이상 신뢰하지 않는다(아래 _handle_coordinator_update 참고).
+_OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongi_jeonweolsayongryang_banolrim"
+# 올려서 재배포하면 저장된 history_seed_version이 이보다 낮은 기존 엔티티는 과거
+# history를 버리고 위 소스로 다시 채운다(소스를 바꿀 때마다 올릴 버전 번호).
+_HISTORY_SEED_VERSION = 2
 
 
 def _normalize_month(raw: str | None) -> str | None:
@@ -65,39 +75,45 @@ def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
 
 
 async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float] | None:
-    """_OLD_ELECTRICITY_STATISTIC_ID의 일별 장기통계에서 월별 사용량을 복원한다. 기기가
-    재연결되며 리셋된 날은 하루치에 음수 delta가 몰려 찍히는데, 그 날짜 하루만 버리고
-    (그 달 전체를 버리지 않고) 나머지로 월별 합을 만든다.
+    """_OLD_ELECTRICITY_STATISTIC_ID("전기 전월사용량(반올림)")는 그 값이 "지난달
+    사용량"이라 한 달 내내 같은 값으로 고정돼 있다 - 그래서 하루 단위로 한 번씩만
+    읽어서, 그 값을 기록된 달(recorded-month)보다 한 달 앞선 실제 사용월로 당겨서
+    history를 만든다. 값이 0인 날(소스가 죽어서 템플릿이 기본값만 내는 기간)은 버린다.
 
-    오류가 나면 None을 돌려줘서(호출한 쪽이 history_seeded를 True로 고정하지 않게) 다음
+    오류가 나면 None을 돌려줘서(호출한 쪽이 history_seed_version을 올리지 않게) 다음
     재시작에 다시 시도하게 한다 - 통계 자체가 없는 설치(이 집 외 다른 사람)에서는 빈
-    dict({})가 정상적으로 돌아오고, 그건 재시도해도 의미 없으니 그대로 seeded 처리한다."""
+    dict({})가 정상적으로 돌아오고, 그건 재시도해도 의미 없으니 그대로 버전을 올린다."""
     start = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
     try:
         rows = await get_instance(hass).async_add_executor_job(
-            statistics_during_period, hass, start, None, {_OLD_ELECTRICITY_STATISTIC_ID}, "day", None, {"change"}
+            statistics_during_period, hass, start, None, {_OLD_ELECTRICITY_STATISTIC_ID}, "day", None, {"state"}
         )
     except Exception as e:  # noqa: BLE001
         _LOGGER.warning("과거 전기 사용량 통계 복원 실패(다음 재시작에 재시도): %s", e)
         return None
 
-    monthly: dict[str, float] = defaultdict(float)
-    for row in rows.get(_OLD_ELECTRICITY_STATISTIC_ID, []):
-        change = row.get("change")
-        if change is None or change < 0:
-            continue
+    def _row_start(row: dict) -> datetime.datetime:
         raw_start = row["start"]
         if isinstance(raw_start, datetime.datetime):
             # recorder.statistics.statistics_during_period()을 직접 부르면 datetime
             # 객체로 온다 - WS API(recorder/statistics_during_period)가 밀리초 정수로
             # 바꿔 내려주는 건 그쪽 JSON 응답 포맷일 뿐, 내부 함수 리턴값은 다르다.
             # 숫자인 줄 알고 1000으로 나누면 전부 1970년 근처로 뭉친다(실제 겪은 버그).
-            start_dt = raw_start if raw_start.tzinfo else raw_start.replace(tzinfo=datetime.timezone.utc)
-        else:
-            start_dt = datetime.datetime.fromtimestamp(raw_start, tz=datetime.timezone.utc)
-        monthly[start_dt.strftime("%Y-%m")] += change
+            return raw_start if raw_start.tzinfo else raw_start.replace(tzinfo=datetime.timezone.utc)
+        return datetime.datetime.fromtimestamp(raw_start, tz=datetime.timezone.utc)
+
+    recorded_month_sample: dict[str, float] = {}
+    for row in sorted(rows.get(_OLD_ELECTRICITY_STATISTIC_ID, []), key=_row_start):
+        recorded_month = _row_start(row).strftime("%Y-%m")
+        if recorded_month in recorded_month_sample:
+            continue  # 그 달 값은 고정이라 하루치만 있으면 충분
+        value = row.get("state")
+        if value:  # 0/None(소스 죽은 기간)은 버림
+            recorded_month_sample[recorded_month] = value
+
+    monthly = {_month_offset(month, -1): value for month, value in recorded_month_sample.items()}
     _LOGGER.warning("과거 전기 사용량 통계 복원 결과: %d개월", len(monthly))
-    return dict(monthly)
+    return monthly
 
 # 전기/가스/수도만 상단에 바로 보이고, 나머지(진단용 조회시각)는 진단 카테고리로
 # 내려간다 - vnrisa/GSE 쪽과 같은 기준.
@@ -234,10 +250,14 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._previous_electricity_usage_last_month = None
         self._previous_electricity_last_month = None
 
-        # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago를
-        # 월별로 쌓아서 history로 만든다. 전기만 추가로 2년치를 한 번 복원해온다.
+        # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago
+        # 필드는 실측(2026-08 실제 고지서 924kWh vs 그 필드 1837.4kWh)으로 틀린 걸
+        # 확인해서 더 이상 안 믿는다 - 대신 매번 "이번달 사용량"만 보고, 달이 바뀌는
+        # 순간을 직접 감지해서(그 달에 본 최댓값을 그 달 확정값으로) history를 쌓는다.
         self._history: dict[str, float] = {}
-        self._history_seeded = False
+        self._history_seed_version = 0
+        self._last_seen_month: str | None = None
+        self._last_seen_value: float | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -245,30 +265,39 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return
 
         last_state = await self.async_get_last_state()
+        old_seed_version = 0
         if last_state is not None:
             attrs = last_state.attributes or {}
-            for month, value in dict(attrs.get("history", {}) or {}).items():
-                self._history.setdefault(month, value)
-            self._history_seeded = bool(attrs.get("history_seeded", False))
+            old_seed_version = attrs.get("history_seed_version", 0)
+            self._last_seen_month = attrs.get("_last_seen_month")
+            self._last_seen_value = attrs.get("_last_seen_value")
+            if self._sensor_type != "electricity" or old_seed_version >= _HISTORY_SEED_VERSION:
+                for month, value in dict(attrs.get("history", {}) or {}).items():
+                    self._history.setdefault(month, value)
+            # else: 전기인데 구버전(last_month/two_months_ago 기반, 틀린 값) 시드라
+            # 그 history는 버리고 아래에서 검증된 소스로 통째로 새로 채운다.
 
-        if self._sensor_type == "electricity" and not self._history_seeded:
+        if self._sensor_type == "electricity" and old_seed_version < _HISTORY_SEED_VERSION:
             seeded = await _seed_electricity_history(self.hass)
             if seeded is not None:
-                for month, value in seeded.items():
-                    self._history.setdefault(month, round(value, 1))
-                self._history_seeded = True
+                self._history = {month: round(value, 1) for month, value in seeded.items()}
+                self._history_seed_version = _HISTORY_SEED_VERSION
                 self.async_write_ha_state()
+        else:
+            self._history_seed_version = old_seed_version
 
     def _handle_coordinator_update(self) -> None:
         if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
-            for month_key, usage_key in (
-                ("last_month", f"{self._sensor_type}_usage_last_month"),
-                ("two_months_ago", f"{self._sensor_type}_usage_two_months_ago"),
-            ):
-                month = _normalize_month(self.coordinator.data.get(month_key))
-                usage = self.coordinator.data.get(usage_key)
-                if month and usage is not None:
-                    self._history[month] = usage
+            this_month = _normalize_month(self.coordinator.data.get("this_month"))
+            current_usage = self.coordinator.data.get(f"{self._sensor_type}_usage_this_month")
+            if this_month and current_usage is not None:
+                if self._last_seen_month == this_month:
+                    self._last_seen_value = max(self._last_seen_value or 0, current_usage)
+                else:
+                    if self._last_seen_month is not None and self._last_seen_value is not None:
+                        self._history[self._last_seen_month] = self._last_seen_value
+                    self._last_seen_month = this_month
+                    self._last_seen_value = current_usage
         super()._handle_coordinator_update()
 
     @property
@@ -327,9 +356,12 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._sensor_type not in _PROMINENT_TYPES:
             return {}
 
-        attrs: dict = {"history": dict(sorted(self._history.items()))}
-        if self._sensor_type == "electricity":
-            attrs["history_seeded"] = self._history_seeded
+        attrs: dict = {
+            "history": dict(sorted(self._history.items())),
+            "history_seed_version": self._history_seed_version,
+            "_last_seen_month": self._last_seen_month,
+            "_last_seen_value": self._last_seen_value,
+        }
         this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
         if this_month:
             last_m = _month_offset(this_month, -1)
