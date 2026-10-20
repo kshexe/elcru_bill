@@ -2,7 +2,7 @@
   "config": {
     "step": {
       "user": {
-        "title": "Elkeuru Utility Bills - Gas",
+        "title": "Elkeuru Management Fee - Gas",
         "description": "Enter your GSE city gas (yesgse.com) login. The apartment management bill is set up separately via the 'Bill link' text entity after install.",
         "data": {
           "gas_member_id": "Gas account ID",
@@ -10,14 +10,14 @@
         }
       },
       "kocom_user": {
-        "title": "Elkeuru Utility Bills - Kocom Energy",
+        "title": "Elkeuru Management Fee - Kocom Energy",
         "description": "Enter your Kocom ID to auto-discover the complex's wall-pad server address.",
         "data": {
           "kocom_username": "Kocom ID"
         }
       },
       "kocom_account": {
-        "title": "Elkeuru Utility Bills - Kocom Energy login",
+        "title": "Elkeuru Management Fee - Kocom Energy login",
         "description": "The server address was filled in automatically. Enter your password.",
         "data": {
           "kocom_ip": "Wall-pad server IP",
@@ -41,7 +41,7 @@
   "options": {
     "step": {
       "init": {
-        "title": "Elkeuru Utility Bills settings",
+        "title": "Elkeuru Management Fee settings",
         "menu_options": {
           "schedule": "Gas check time",
           "gas_login": "Gas login",

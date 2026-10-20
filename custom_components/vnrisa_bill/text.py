@@ -26,9 +26,9 @@ _LOGGER = logging.getLogger(__name__)
 def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "엘크루 공과금",
-        "manufacturer": "vnrisa (비공식) / GSE 도시가스 / Kocom",
-        "model": "관리비·가스·코콤 고지서",
+        "name": "엘크루 관리비",
+        "manufacturer": "vnrisa / GSE / Kocom energy 제조",
+        "model": "관리비·가스·코콤 관리비",
     }
 
 

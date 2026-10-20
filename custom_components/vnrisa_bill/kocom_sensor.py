@@ -2,7 +2,7 @@
 전기·가스·수도 사용량을 센서로 만든다(온수/난방은 이 집엔 해당 없어 - 항상 0 - 아예
 센서로 안 만든다). 로직(특히 전기 센서의 '이번달 사용량이 이전 응답의 지난달 사용량과
 같으면 월경계 글리치로 보고 버리는' 검증)은 그대로 가져왔고, device_info만 이 통합의
-공용 기기("엘크루 공과금")를 쓰도록 바꿨다.
+공용 기기("엘크루 관리비")를 쓰도록 바꿨다.
 
 vnrisa 관리비/GSE 가스와 달리 자체 DataUpdateCoordinator로 폴링한다(원본 그대로) -
 아파트 단지 로컬 소켓이라 원래도 Token 문제가 없고, 주기적 폴링이 자연스러운 방식이다.
@@ -31,7 +31,7 @@ from .kocom_api import KocomAPI
 
 _LOGGER = logging.getLogger(__name__)
 
-# 이 집에서 코콤/엘크루 공과금이 생기기 전부터(2024년초~) "전월사용량"을 따로 계산해
+# 이 집에서 코콤/엘크루 관리비가 생기기 전부터(2024년초~) "전월사용량"을 따로 계산해
 # 쌓아두던 더 오래된 템플릿 센서 - 가스/수도엔 이런 긴 과거 기록이 없어 전기만 해당.
 # 한 번만 history에 심어주는 용도라, 이 통계가 없는 환경(다른 설치)에서는 조용히 그냥
 # 건너뛴다.
@@ -174,9 +174,9 @@ SENSOR_TYPES = {
 def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
-        "name": "엘크루 공과금",
-        "manufacturer": "vnrisa (비공식) / GSE 도시가스 / Kocom",
-        "model": "관리비·가스·코콤 고지서",
+        "name": "엘크루 관리비",
+        "manufacturer": "vnrisa / GSE / Kocom energy 제조",
+        "model": "관리비·가스·코콤 관리비",
     }
 
 

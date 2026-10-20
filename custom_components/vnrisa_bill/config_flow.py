@@ -135,7 +135,7 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
 
             if authenticated:
                 return self.async_create_entry(
-                    title="엘크루 공과금",
+                    title="엘크루 관리비",
                     data={
                         **self._gas_data,
                         CONF_KOCOM_IP: ip,

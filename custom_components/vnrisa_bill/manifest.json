@@ -1,6 +1,6 @@
 {
   "domain": "vnrisa_bill",
-  "name": "엘크루 공과금",
+  "name": "엘크루 관리비",
   "codeowners": [],
   "config_flow": true,
   "documentation": "https://github.com/kshexe/elcru_bill",
@@ -11,5 +11,5 @@
     "python-dateutil>=2.8"
   ],
   "single_config_entry": true,
-  "version": "4.9.5"
+  "version": "5.0.0"
 }
