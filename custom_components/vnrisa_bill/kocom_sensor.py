@@ -66,9 +66,11 @@ def _month_offset(month: str, delta_months: int) -> str:
 
 
 def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
-    """기존 "전기 작년사용량" SQL 도우미와 똑같은 방식 - 정확히 "작년 같은 달"만 고집하지
-    않고, 11개월 전 이전 중 가장 최근 값을 쓴다. 기기가 꺼져있던 달이 껴 있어도(이 집은
-    2025-10이 그런 경우) 그보다 조금 더 과거의 값으로 자연스럽게 대체된다."""
+    """정확히 "작년 같은 달"이 있으면 그걸 쓰고, 없을 때만(데이터 공백) 기존 "전기
+    작년사용량" SQL 도우미처럼 11개월 전 이전 중 가장 최근 값으로 대체한다."""
+    exact = history.get(_month_offset(this_month, -12))
+    if exact is not None:
+        return exact
     threshold = _month_offset(this_month, -11)
     candidates = [m for m in history if m <= threshold]
     return history[max(candidates)] if candidates else None
