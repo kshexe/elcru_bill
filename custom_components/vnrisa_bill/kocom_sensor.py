@@ -293,7 +293,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._sensor_type == "electricity" and old_seed_version < _HISTORY_SEED_VERSION:
             seeded = await _seed_electricity_history(self.hass)
             if seeded is not None:
-                self._history = {month: round(value, 1) for month, value in seeded.items()}
+                self._history = {month: _round_half_up(value) for month, value in seeded.items()}
                 self._history_seed_version = _HISTORY_SEED_VERSION
         else:
             self._history_seed_version = old_seed_version
@@ -313,7 +313,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 month = _normalize_month(self.coordinator.data.get(month_key))
                 usage = self.coordinator.data.get(usage_key)
                 if month and usage is not None:
-                    self._history[month] = usage
+                    self._history[month] = _round_half_up(usage)
             this_month = _normalize_month(self.coordinator.data.get("this_month"))
             if this_month:
                 _prune_history(self._history, this_month)
