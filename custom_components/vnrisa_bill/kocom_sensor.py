@@ -349,10 +349,12 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
     """KocomEnergySensor가 들고 있는 history에서 전월/작년 값만 뽑아 독립된 센서로
     노출한다 - 속성이 아니라 대시보드/그래프/자동화에서 바로 쓸 수 있게 하기 위함.
     값 자체는 source(=그 타입의 KocomEnergySensor)가 이미 쌓아둔 history를 그대로
-    읽기만 하므로, 별도 폴링이나 자체 상태 저장이 필요 없다."""
+    읽기만 하므로, 별도 폴링이나 자체 상태 저장이 필요 없다.
+
+    전기/가스/수도 사용량(현재사용량) 3개와 같은 레벨의 "센서"로 바로 보이게 - 진단
+    카테고리로 내려가지 않는다."""
 
     _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
     def __init__(
         self, coordinator, source: "KocomEnergySensor", entry: ConfigEntry, sensor_type: str, kind: str
