@@ -280,9 +280,14 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             if seeded is not None:
                 self._history = {month: round(value, 1) for month, value in seeded.items()}
                 self._history_seed_version = _HISTORY_SEED_VERSION
-                self.async_write_ha_state()
         else:
             self._history_seed_version = old_seed_version
+
+        # coordinator.async_add_listener는 "앞으로의" 갱신에만 콜백을 걸어준다 - 엔티티가
+        # 생성되기 전에 이미 받아온 첫 조회 데이터(coordinator.data)는 그냥 두면
+        # _handle_coordinator_update가 다음 폴링(최대 1시간) 전까지 한 번도 안 불려서
+        # history가 안 채워진다 - 지금 가진 데이터로 한 번 직접 돌려준다.
+        self._handle_coordinator_update()
 
     def _handle_coordinator_update(self) -> None:
         if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
