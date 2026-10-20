@@ -37,6 +37,15 @@ _LOGGER = logging.getLogger(__name__)
 _OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongiyogeum_kwhto_kwh"
 
 
+def _normalize_month(raw: str | None) -> str | None:
+    """코콤이 this_month/last_month/two_months_ago로 주는 건 'YYYYMM'(하이픈 없음) -
+    history 쪽(_seed_electricity_history, vnrisa/GSE)은 전부 'YYYY-MM'을 쓰므로 여기서
+    맞춰준다. 포맷이 다르면(응답 깨짐 등) None."""
+    if not raw or len(raw) != 6 or not raw.isdigit():
+        return None
+    return f"{raw[:4]}-{raw[4:]}"
+
+
 def _month_offset(month: str, delta_months: int) -> str:
     """'YYYY-MM' 문자열에서 delta_months만큼 이동한 'YYYY-MM'을 돌려준다(음수=과거)."""
     year, mon = int(month[:4]), int(month[5:7])
@@ -241,7 +250,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 ("last_month", f"{self._sensor_type}_usage_last_month"),
                 ("two_months_ago", f"{self._sensor_type}_usage_two_months_ago"),
             ):
-                month = self.coordinator.data.get(month_key)
+                month = _normalize_month(self.coordinator.data.get(month_key))
                 usage = self.coordinator.data.get(usage_key)
                 if month and usage is not None:
                     self._history[month] = usage
@@ -306,7 +315,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         attrs: dict = {"history": dict(sorted(self._history.items()))}
         if self._sensor_type == "electricity":
             attrs["history_seeded"] = self._history_seeded
-        this_month = (self.coordinator.data or {}).get("this_month")
+        this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
         if this_month:
             last_m = _month_offset(this_month, -1)
             year_m = _month_offset(this_month, -12)
