@@ -274,6 +274,10 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._attr_icon = sensor_data["icon"]
         self._attr_device_info = _device_info(entry)
         self._attr_entity_category = None if sensor_type in _PROMINENT_TYPES else EntityCategory.DIAGNOSTIC
+        if sensor_type in _PROMINENT_TYPES:
+            # 값 자체를 반올림해서 정수로 주지만, 프론트엔드가 device_class 기준으로
+            # 소수점을 다시 붙여서 보여줄 수 있어 표시 정밀도도 0으로 고정한다.
+            self._attr_suggested_display_precision = 0
 
         # 정상 데이터가 수신될 때 이번달/지난달 전기 사용량 보관용 변수 (월경계 글리치 검증용)
         self._previous_electricity_usage_this_month = None
@@ -438,6 +442,7 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
         self._attr_native_unit_of_measurement = source._attr_native_unit_of_measurement
         self._attr_icon = source._attr_icon
         self._attr_device_info = _device_info(entry)
+        self._attr_suggested_display_precision = 0
 
     @property
     def native_value(self):
