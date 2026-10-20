@@ -24,6 +24,7 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
+from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
 from .const import CONF_KOCOM_IP, CONF_KOCOM_PASSWORD, CONF_KOCOM_UPDATE_INTERVAL, CONF_KOCOM_USERNAME, DOMAIN
@@ -244,8 +245,12 @@ async def async_setup_kocom_entry(
 
     await coordinator.async_config_entry_first_refresh()
 
+    # "어느 소스로 history를 채웠는지" 버전 번호는 속성으로 보이면 혼란스러워서 엔티티
+    # 상태가 아니라 별도 Store에 조용히 둔다.
+    seed_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_kocom_seed")
+
     main_sensors = {
-        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data)
+        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data, seed_store)
         for sensor_type, sensor_data in SENSOR_TYPES.items()
     }
     history_sensors = [
@@ -262,8 +267,11 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(self, coordinator, entry: ConfigEntry, sensor_type: str, sensor_data: dict) -> None:
+    def __init__(
+        self, coordinator, entry: ConfigEntry, sensor_type: str, sensor_data: dict, seed_store: Store
+    ) -> None:
         super().__init__(coordinator)
+        self._seed_store = seed_store
 
         self._sensor_type = sensor_type
         self._attr_name = sensor_data["name"]
@@ -290,18 +298,22 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         # 안정적인 걸 확인함 - 간단한 쪽으로 감). 전기만 추가로 검증된 과거 기록을 한 번
         # 심어온다(코콤 자체는 최근 2~3달치만 알려줘서 그보다 오래된 건 알 수 없음).
         self._history: dict[str, float] = {}
-        self._history_seed_version = 0
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
         if self._sensor_type not in _PROMINENT_TYPES:
             return
 
-        last_state = await self.async_get_last_state()
+        # "어느 소스로 채웠는지" 버전 번호는 엔티티 속성이 아니라 별도 Store에만
+        # 조용히 둔다(화면에 안 보이게).
         old_seed_version = 0
+        if self._sensor_type == "electricity":
+            seed_data = await self._seed_store.async_load() or {}
+            old_seed_version = seed_data.get("version", 0)
+
+        last_state = await self.async_get_last_state()
         if last_state is not None:
             attrs = last_state.attributes or {}
-            old_seed_version = attrs.get("history_seed_version", 0)
             if self._sensor_type != "electricity" or old_seed_version >= _HISTORY_SEED_VERSION:
                 for month, value in dict(attrs.get("history", {}) or {}).items():
                     # 예전 버전에서 소수점으로 저장된 값도 복원하면서 정수로 맞춘다.
@@ -313,9 +325,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             seeded = await _seed_electricity_history(self.hass)
             if seeded is not None:
                 self._history = {month: _round_half_up(value) for month, value in seeded.items()}
-                self._history_seed_version = _HISTORY_SEED_VERSION
-        else:
-            self._history_seed_version = old_seed_version
+                await self._seed_store.async_save({"version": _HISTORY_SEED_VERSION})
 
         # coordinator.async_add_listener는 "앞으로의" 갱신에만 콜백을 걸어준다 - 엔티티가
         # 생성되기 전에 이미 받아온 첫 조회 데이터(coordinator.data)는 그냥 두면
@@ -400,10 +410,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._sensor_type not in _PROMINENT_TYPES:
             return {}
 
-        attrs: dict = {
-            "history": dict(sorted(self._history.items())),
-            "history_seed_version": self._history_seed_version,
-        }
+        attrs: dict = {"history": dict(sorted(self._history.items()))}
         this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
         if this_month:
             last_m = _month_offset(this_month, -1)

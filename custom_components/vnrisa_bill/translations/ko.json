@@ -43,15 +43,15 @@
       "init": {
         "title": "엘크루 관리비 설정",
         "menu_options": {
-          "schedule": "도시가스 확인 시각",
+          "schedule": "도시가스 확인시각",
           "gas_login": "도시가스 로그인",
           "kocom_login": "코콤 에너지 로그인"
         }
       },
       "schedule": {
-        "title": "가스 확인 시각",
+        "title": "가스 확인시각",
         "data": {
-          "gas_check_time": "매일 확인 시각 (HH:MM)"
+          "gas_check_time": "매일 확인시각 (HH:MM)"
         }
       },
       "gas_login": {
