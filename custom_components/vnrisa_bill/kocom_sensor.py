@@ -47,6 +47,20 @@ _OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongi_jeonweolsayongryang_banolrim"
 # history를 버리고 위 소스로 다시 채운다(소스를 바꿀 때마다 올릴 버전 번호).
 _HISTORY_SEED_VERSION = 2
 
+# 코콤도, 위 과거 통계도 둘 다 비어있는 달(그 시기 자체에 기기가 꺼져있던 경우, 예:
+# 2026-04)은 vnrisa 관리비 고지서 쪽 전기 사용량으로 메운다 - 거긴 코콤과 무관하게
+# 그 달 고지서를 붙여넣을 때마다 따로 쌓인다. vnrisa는 2026-03부터만 있어서 그보다
+# 오래된 공백(예: 2025-09)은 이것으로도 못 채운다.
+_VNRISA_ELECTRICITY_ENTITY_ID = "sensor.elkeuru_gonggwageum_jeongi_sayongryang_vnrisa"
+
+
+def _supplement_from_vnrisa(hass: HomeAssistant, history: dict[str, Any]) -> None:
+    state = hass.states.get(_VNRISA_ELECTRICITY_ENTITY_ID)
+    if state is None:
+        return
+    for month, value in (state.attributes.get("history") or {}).items():
+        history.setdefault(month, _round_half_up(value))
+
 
 def _normalize_month(raw: str | None) -> str | None:
     """코콤이 this_month/last_month/two_months_ago로 주는 건 'YYYYMM'(하이픈 없음) -
@@ -72,9 +86,9 @@ def _round_half_up(value: float | None) -> int | None:
     return int(value + 0.5) if value is not None else None
 
 
-def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 24) -> None:
-    """2년(24개월)이면 "작년" 조회에 충분해서, 그보다 오래된 기록은 계속 쌓아두지 않고
-    지운다."""
+def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 12) -> None:
+    """"작년 같은 달"까지만 보면 되니(지금이 10월이면 작년 10월까지), 12개월이면 충분해서
+    그보다 오래된 기록은 계속 쌓아두지 않고 지운다."""
     cutoff = _month_offset(this_month, -keep_months)
     for month in [m for m in history if m < cutoff]:
         del history[month]
@@ -315,6 +329,12 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 usage = self.coordinator.data.get(usage_key)
                 if month and usage is not None:
                     self._history[month] = _round_half_up(usage)
+            if self._sensor_type == "electricity" and self.hass is not None:
+                # vnrisa 엔티티는 플랫폼 설정 순서상 이 코콤 센서보다 늦게 만들어져서,
+                # async_added_to_hass 시점엔 아직 없을 수 있다 - 매 폴링마다(또는
+                # async_added_to_hass가 수동으로 한 번 불러주는 시점에) 다시 시도하면
+                # 결국 한 번은 걸린다.
+                _supplement_from_vnrisa(self.hass, self._history)
             this_month = _normalize_month(self.coordinator.data.get("this_month"))
             if this_month:
                 _prune_history(self._history, this_month)

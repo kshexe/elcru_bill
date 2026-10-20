@@ -116,9 +116,10 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
-def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 24) -> None:
-    """2년(24개월)이면 "작년" 조회에 충분해서, 그보다 오래된 기록은 계속 쌓아두지 않고
-    지운다 - kocom_sensor.py에도 같은 함수가 있다."""
+def _prune_history(history: dict[str, Any], this_month: str, keep_months: int = 12) -> None:
+    """"작년 같은 달"까지만 보면 되니(지금이 10월이면 작년 10월까지), 12개월이면 충분해서
+    그보다 오래된 기록은 계속 쌓아두지 않고 지운다 - kocom_sensor.py에도 같은 함수가
+    있다."""
     cutoff = _month_offset(this_month, -keep_months)
     for month in [m for m in history if m < cutoff]:
         del history[month]
