@@ -252,14 +252,12 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._previous_electricity_usage_last_month = None
         self._previous_electricity_last_month = None
 
-        # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago
-        # 필드는 실측(2026-08 실제 고지서 924kWh vs 그 필드 1837.4kWh)으로 틀린 걸
-        # 확인해서 더 이상 안 믿는다 - 대신 매번 "이번달 사용량"만 보고, 달이 바뀌는
-        # 순간을 직접 감지해서(그 달에 본 최댓값을 그 달 확정값으로) history를 쌓는다.
+        # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago를
+        # 월별로 쌓아서 history로 만든다(한 번 1837.4처럼 튄 적이 있었지만, 연속 재조회로
+        # 안정적인 걸 확인함 - 간단한 쪽으로 감). 전기만 추가로 검증된 과거 기록을 한 번
+        # 심어온다(코콤 자체는 최근 2~3달치만 알려줘서 그보다 오래된 건 알 수 없음).
         self._history: dict[str, float] = {}
         self._history_seed_version = 0
-        self._last_seen_month: str | None = None
-        self._last_seen_value: float | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -271,13 +269,11 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if last_state is not None:
             attrs = last_state.attributes or {}
             old_seed_version = attrs.get("history_seed_version", 0)
-            self._last_seen_month = attrs.get("_last_seen_month")
-            self._last_seen_value = attrs.get("_last_seen_value")
             if self._sensor_type != "electricity" or old_seed_version >= _HISTORY_SEED_VERSION:
                 for month, value in dict(attrs.get("history", {}) or {}).items():
                     self._history.setdefault(month, value)
-            # else: 전기인데 구버전(last_month/two_months_ago 기반, 틀린 값) 시드라
-            # 그 history는 버리고 아래에서 검증된 소스로 통째로 새로 채운다.
+            # else: 전기인데 구버전(옛 소스 기반) 시드라 그 history는 버리고 아래에서
+            # 검증된 소스로 통째로 새로 채운다.
 
         if self._sensor_type == "electricity" and old_seed_version < _HISTORY_SEED_VERSION:
             seeded = await _seed_electricity_history(self.hass)
@@ -290,16 +286,14 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     def _handle_coordinator_update(self) -> None:
         if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
-            this_month = _normalize_month(self.coordinator.data.get("this_month"))
-            current_usage = self.coordinator.data.get(f"{self._sensor_type}_usage_this_month")
-            if this_month and current_usage is not None:
-                if self._last_seen_month == this_month:
-                    self._last_seen_value = max(self._last_seen_value or 0, current_usage)
-                else:
-                    if self._last_seen_month is not None and self._last_seen_value is not None:
-                        self._history[self._last_seen_month] = self._last_seen_value
-                    self._last_seen_month = this_month
-                    self._last_seen_value = current_usage
+            for month_key, usage_key in (
+                ("last_month", f"{self._sensor_type}_usage_last_month"),
+                ("two_months_ago", f"{self._sensor_type}_usage_two_months_ago"),
+            ):
+                month = _normalize_month(self.coordinator.data.get(month_key))
+                usage = self.coordinator.data.get(usage_key)
+                if month and usage is not None:
+                    self._history[month] = usage
         super()._handle_coordinator_update()
 
     @property
@@ -361,8 +355,6 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         attrs: dict = {
             "history": dict(sorted(self._history.items())),
             "history_seed_version": self._history_seed_version,
-            "_last_seen_month": self._last_seen_month,
-            "_last_seen_value": self._last_seen_value,
         }
         this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
         if this_month:
