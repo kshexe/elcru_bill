@@ -151,6 +151,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         )
     )
 
+    # 가스와 같은 임시 진단(11월 1일만) - citywaste도 "지난달"(정산내역) 데이터가
+    # 정확히 몇 시에 올라오는지 몰라서, 그날 하루만 매시간 조회해서 로그로 남긴다.
+    # 확인되면 지운다.
+    async def _citywaste_diagnostic_scheduled(now) -> None:
+        if now.day != 1:
+            return
+        await async_refresh_citywaste(hass, entry)
+        settle_sensor = entry.runtime_data.citywaste_sensors.get("음식물쓰레기 정산금액")
+        _LOGGER.warning(
+            "[음쓰 반영시각 진단] %s - 최신월=%s, 정산금액=%s",
+            now.strftime("%Y-%m-%d %H:%M:%S"),
+            getattr(settle_sensor, "_latest_month", None),
+            getattr(settle_sensor, "_attr_native_value", None),
+        )
+
+    entry.async_on_unload(
+        async_track_time_change(hass, _citywaste_diagnostic_scheduled, minute=0, second=0)
+    )
+
     citywaste_refresh_interval = entry.data.get(
         CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL
     )
