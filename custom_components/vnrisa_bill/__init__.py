@@ -118,6 +118,25 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
     )
 
+    # 임시 진단(11월 1일만) - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서,
+    # 그날 하루만 매시간 조회해서 로그로 남긴다. citywaste처럼 "매일"이 아니라 "매달
+    # 1회, 정확한 시각"으로 바꿀 근거를 만들기 위한 일회성 관찰용 - 확인되면 지운다.
+    async def _gas_diagnostic_scheduled(now) -> None:
+        if now.day != 1:
+            return
+        await async_refresh_gas(hass, entry)
+        usage_sensor = entry.runtime_data.gas_sensors.get("가스 사용량")
+        _LOGGER.warning(
+            "[가스 반영시각 진단] %s - 최신월=%s, 사용량=%s",
+            now.strftime("%Y-%m-%d %H:%M:%S"),
+            getattr(usage_sensor, "_latest_month", None),
+            getattr(usage_sensor, "_attr_native_value", None),
+        )
+
+    entry.async_on_unload(
+        async_track_time_change(hass, _gas_diagnostic_scheduled, minute=0, second=0)
+    )
+
     citywaste_hour, citywaste_minute = (int(x) for x in DEFAULT_CITYWASTE_CHECK_TIME.split(":"))
 
     async def _citywaste_scheduled(now) -> None:
