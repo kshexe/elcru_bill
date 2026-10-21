@@ -160,7 +160,7 @@ SENSOR_TYPES = {
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "",
-        "icon": "mdi:api",
+        "icon": "mdi:clock-check-outline",
     },
     "electricity": {
         "name": "전기 사용량 (kocom)",

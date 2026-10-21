@@ -165,14 +165,15 @@ def _month_back(base: date, months_back: int) -> tuple[int, int]:
 async def fetch_citywaste_history(
     member_id: str, member_pwd: str, months_back: int = 1
 ) -> tuple[list[dict], float | int | None]:
-    """로그인 후 최근 `months_back`개월치(이번달 포함) 음쓰 정산내역을 달마다 따로
-    조회한다. 그 달 데이터가 아직 없으면(예: 이번달 중간) 조용히 건너뛴다. kg당 단가는
-    달마다 달라지지 않으니(요금은 "단가조회" 팝업 기준 고정값) 한 번만 같이 조회해서
-    별도로 돌려준다.
+    """로그인 후 과거 `months_back`개월치(이번 달은 제외, 이미 끝난 달만) 음쓰
+    정산내역을 달마다 따로 조회한다. 그 달 데이터가 아직 없으면 조용히 건너뛴다.
 
-    이번달(offset 0)은 정산 배치가 아직 안 돌아서 "나의 수수료 조회"가 0만 주는 경우가
-    많다 - 그 경우 로그인 때 받은 태그ID + 이 페이지에서 뽑은 동/호수로 실시간 조회
-    API를 한 번 더 불러서 덮어쓴다."""
+    이번 달은 정산 배치가 아직 안 돌아서 "나의 수수료 조회"가 어차피 0만 줘서, 그
+    페이지를 따로 긁지 않고 실시간 조회 API(로그인 때 받은 태그ID + 과거 달 페이지
+    에서 뽑은 동/호수)만으로 채운다 - 조회마다 "이번 달 0원" 페이지 요청을 하나 아낀다.
+
+    kg당 단가는 달마다 달라지지 않으니(요금은 "단가조회" 팝업 기준 고정값) 한 번만
+    같이 조회해서 별도로 돌려준다."""
     rows: list[dict] = []
     today = date.today()
     async with aiohttp.ClientSession(
@@ -181,7 +182,9 @@ async def fetch_citywaste_history(
         memb_info = await _login(session, member_id, member_pwd)
         tag_id = memb_info.get("tagprintcd")
         unit_price = await _fetch_unit_price(session)
-        for offset in range(months_back):
+
+        dong = ho = None
+        for offset in range(1, months_back + 1):
             year, month = _month_back(today, offset)
             async with session.post(
                 CHARGE_URL,
@@ -194,9 +197,14 @@ async def fetch_citywaste_history(
             if parsed is None:
                 continue
             parsed["month"] = f"{year:04d}-{month:02d}"
-            if offset == 0 and tag_id and parsed.get("dong") and parsed.get("ho"):
-                live = await _fetch_current_month_live(session, tag_id, parsed["dong"], parsed["ho"])
-                if live is not None:
-                    parsed.update(live)
+            if dong is None and parsed.get("dong") and parsed.get("ho"):
+                dong, ho = parsed["dong"], parsed["ho"]
             rows.append(parsed)
+
+        current_row: dict = {"month": f"{today.year:04d}-{today.month:02d}", "final_amount": 0}
+        if tag_id and dong and ho:
+            live = await _fetch_current_month_live(session, tag_id, dong, ho)
+            if live is not None:
+                current_row.update(live)
+        rows.append(current_row)
     return rows, unit_price

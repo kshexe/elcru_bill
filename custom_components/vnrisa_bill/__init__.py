@@ -208,8 +208,9 @@ async def async_refresh_gas(hass: HomeAssistant, entry: VnrisaConfigEntry) -> No
 async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
     """entry.data에 저장된 아이디/비밀번호로 로그인해서 음쓰 정산내역을 조회해
     센서에 반영한다. GSE처럼 한 번에 전체 기간을 안 주고 달마다 따로 요청해야 해서,
-    처음 한 번만 1년치를 긁고(backfill_store에 기록) 그 뒤로는 최근 2달만 가볍게
-    갱신한다."""
+    처음 한 번만 1년치를 긁고(backfill_store에 기록) 그 뒤로는 지난 달 1개월만
+    가볍게 갱신한다 - 이번 달은(fetch_citywaste_history 안에서) 페이지 요청 없이
+    항상 실시간 조회로만 채워지니 months_back에는 안 들어간다."""
     from .sensor import sync_citywaste_sensors  # 순환 임포트 방지용 지연 임포트
 
     runtime = entry.runtime_data
@@ -222,7 +223,7 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     backfilled = False
     if runtime.citywaste_backfill_store is not None:
         backfilled = bool((await runtime.citywaste_backfill_store.async_load() or {}).get("done"))
-    months_back = 2 if backfilled else 12
+    months_back = 1 if backfilled else 11
 
     try:
         rows, unit_price = await fetch_citywaste_history(member_id, member_pwd, months_back=months_back)

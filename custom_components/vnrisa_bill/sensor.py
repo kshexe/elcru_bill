@@ -107,6 +107,27 @@ def flatten_bill_items(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     return items
 
 
+def _icon_for_key(key: str) -> str:
+    """vnrisa 고지서 항목은 이름 자체가 하드코딩 없이 그때그때 생겨서(맨 위 docstring
+    참고) 항목별로 아이콘을 일일이 지정할 수 없다 - 그래서 이름 패턴만 보고 고른다.
+    같은 패턴이 GSE/citywaste의 고정 키들에도 그대로 들어맞아서 공용으로 쓴다."""
+    if key.endswith("사용량"):
+        if key.startswith("전기"):
+            return "mdi:flash"
+        if key.startswith("가스"):
+            return "mdi:fire"
+        return "mdi:water"  # 수도/냉수/온수/급탕 등
+    if key.endswith("계량기 지침"):
+        return "mdi:counter"
+    if key.endswith("배출량"):
+        return "mdi:scale"
+    if key.endswith("배출건수"):
+        return "mdi:counter"
+    if "단가" in key:
+        return "mdi:tag-outline"
+    return "mdi:currency-krw"  # 그 외 요금/정산금액 성격 항목
+
+
 _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
 _USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
@@ -357,6 +378,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         self._attr_entity_category = entity_category
         self._attr_name = item.get("display_name", key)
         self._attr_unique_id = f"{entry.entry_id}_{slugify(key)}"
+        self._attr_icon = _icon_for_key(key)
         self._attr_device_info = _device_info(entry)
         self._attr_native_unit_of_measurement = item.get("unit")
         self._latest_month: str | None = None
