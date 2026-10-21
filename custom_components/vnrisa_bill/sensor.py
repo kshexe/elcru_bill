@@ -402,14 +402,20 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
 
     def _build_extra_attrs(self) -> dict[str, Any]:
         attrs = dict(self._regular_attrs)
-        if self._key in _USAGE_KEYS and self._latest_month:
-            last_m = _month_offset(self._latest_month, -1)
-            if last_m in self._history:
-                attrs["전월"] = self._history[last_m]
-            year_ago = _nearest_year_ago(self._history, self._latest_month)
-            if year_ago is not None:
-                attrs["작년"] = year_ago
-            _prune_history(self._history, self._latest_month)
+        if self._latest_month:
+            if self._key in _USAGE_KEYS:
+                last_m = _month_offset(self._latest_month, -1)
+                if last_m in self._history:
+                    attrs["전월"] = self._history[last_m]
+                year_ago = _nearest_year_ago(self._history, self._latest_month)
+                if year_ago is not None:
+                    attrs["작년"] = year_ago
+            # 가스 쪽은 _USAGE_KEYS(사용량)만이 아니라 청구금액/납부금액/계량기 지침도
+            # 12개월로 맞춘다 - 안 그러면 매번 fetch_gas_history가 다시 가져오는
+            # 24개월(months_back 기본값)치가 그대로 다 쌓여서 사용량만 12개월, 나머지
+            # 3개는 24개월로 서로 안 맞았다.
+            if self._key in _USAGE_KEYS or self._key in _GAS_KEYS:
+                _prune_history(self._history, self._latest_month)
         attrs["history"] = dict(sorted(self._history.items()))
         return attrs
 

@@ -11,5 +11,5 @@
     "python-dateutil>=2.8"
   ],
   "single_config_entry": true,
-  "version": "5.10.1"
+  "version": "5.10.2"
 }
