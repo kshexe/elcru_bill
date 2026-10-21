@@ -43,24 +43,23 @@
       "init": {
         "title": "엘크루 관리비 설정",
         "menu_options": {
-          "schedule": "도시가스 확인시각",
+          "bill_info": "관리비 조회시간",
           "gas_login": "도시가스 로그인",
           "kocom_login": "코콤 에너지 로그인",
           "citywaste_login": "음쓰 로그인"
         }
       },
-      "schedule": {
-        "title": "가스 확인시각",
-        "data": {
-          "gas_check_time": "매일 확인시각 (HH:MM)"
-        }
+      "bill_info": {
+        "title": "관리비(vnrisa) 조회시간",
+        "description": "관리비는 로그인도 없고 고정 조회 주기도 없습니다 - '고지서 링크' 텍스트 입력창에 그 달 링크를 붙여넣을 때만 조회됩니다. 여기서 바꿀 수 있는 설정은 없습니다."
       },
       "gas_login": {
         "title": "도시가스 로그인",
-        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다.",
+        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다. 매일 조회 시각도 여기서 바꿀 수 있습니다.",
         "data": {
           "gas_member_id": "가스 아이디",
-          "gas_member_pwd": "가스 비밀번호"
+          "gas_member_pwd": "가스 비밀번호",
+          "gas_check_time": "매일 확인시각 (HH:MM)"
         }
       },
       "kocom_login": {
@@ -74,7 +73,7 @@
       },
       "citywaste_login": {
         "title": "음쓰(citywaste) 로그인",
-        "description": "citywaste.or.kr 로그인 정보입니다. 설치 후 한 번도 조회 성공한 적이 없으면 최근 1년치를 한 번에 가져오고(이미 가져왔으면 비밀번호를 다시 입력해도 다시 긁지 않습니다), 그 뒤로는 매달 1일에 지난 달 1개월 + 이번 달 실시간만 갱신합니다.",
+        "description": "citywaste.or.kr 로그인 정보입니다.\n\n실시간 조회시간: 매달 1일 00:00 (+ HA 재시작 시) - 고정, 설정 불가.\n설치 후 한 번도 조회 성공한 적이 없으면 최근 1년치를 한 번에 가져오고(이미 가져왔으면 비밀번호를 다시 입력해도 다시 긁지 않습니다), 그 뒤로는 지난 달 1개월만 같이 갱신합니다.",
         "data": {
           "citywaste_id": "citywaste 아이디",
           "citywaste_pwd": "citywaste 비밀번호"

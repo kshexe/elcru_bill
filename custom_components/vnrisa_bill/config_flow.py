@@ -182,54 +182,55 @@ class VnrisaOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["schedule", "gas_login", "kocom_login", "citywaste_login"],
+            menu_options=["bill_info", "gas_login", "kocom_login", "citywaste_login"],
         )
 
-    async def async_step_schedule(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        errors: dict[str, str] = {}
-        current = self.config_entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
+    async def async_step_bill_info(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """관리비(vnrisa)는 로그인도 없고 고정 조회 주기도 없다 - 그 달 고지서
+        링크를 "고지서 링크" 텍스트 입력창에 붙여넣을 때만 조회하는 이벤트성 구조라,
+        바꿀 수 있는 설정이 없는 안내 전용 화면(제출해도 아무 값도 안 바뀜)."""
         if user_input is not None:
-            check_time = user_input[CONF_GAS_CHECK_TIME].strip()
-            if _TIME_RE.match(check_time):
-                return self.async_create_entry(
-                    data={**self.config_entry.options, CONF_GAS_CHECK_TIME: check_time}
-                )
-            errors[CONF_GAS_CHECK_TIME] = "invalid_time"
-        return self.async_show_form(
-            step_id="schedule",
-            data_schema=vol.Schema({vol.Required(CONF_GAS_CHECK_TIME, default=current): str}),
-            errors=errors,
-        )
+            return self.async_create_entry(data=dict(self.config_entry.options))
+        return self.async_show_form(step_id="bill_info", data_schema=vol.Schema({}))
 
     async def async_step_gas_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """도시가스 비밀번호가 바뀌었을 때 등 - 로그인 검증까지 하고 entry.data를
-        갈아치운다(옵션이 아니라 로그인 정보라 entry.data 쪽)."""
+        갈아치운다(옵션이 아니라 로그인 정보라 entry.data 쪽). 확인시각(옵션)도 같은
+        화면에서 같이 받는다 - 둘 다 "도시가스" 관련 설정인데 메뉴를 따로 둘 이유가
+        없었다."""
         errors: dict[str, str] = {}
+        current_check_time = self.config_entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
         if user_input is not None:
             member_id = user_input[CONF_GAS_MEMBER_ID].strip()
             member_pwd = user_input[CONF_GAS_MEMBER_PWD]
-            try:
-                await fetch_gas_history(member_id, member_pwd, months_back=1)
-            except GasLoginError as err:
-                _LOGGER.warning("가스 로그인 검증 실패: %s", err)
-                errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("가스 로그인 검증 중 알 수 없는 오류")
-                errors["base"] = "cannot_connect"
+            check_time = user_input[CONF_GAS_CHECK_TIME].strip()
+            if not _TIME_RE.match(check_time):
+                errors[CONF_GAS_CHECK_TIME] = "invalid_time"
             else:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        **self.config_entry.data,
-                        CONF_GAS_MEMBER_ID: member_id,
-                        CONF_GAS_MEMBER_PWD: member_pwd,
-                    },
-                )
-                # entry.data만 바꾸면(옵션이 아니라) update_listener가 안 불려서 다음
-                # 재시작 전까진 새 로그인 정보가 실제로 쓰이지 않는다 - 바로 반영되게
-                # 명시적으로 reload.
-                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
-                return self.async_create_entry(data=dict(self.config_entry.options))
+                try:
+                    await fetch_gas_history(member_id, member_pwd, months_back=1)
+                except GasLoginError as err:
+                    _LOGGER.warning("가스 로그인 검증 실패: %s", err)
+                    errors["base"] = "invalid_auth"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("가스 로그인 검증 중 알 수 없는 오류")
+                    errors["base"] = "cannot_connect"
+                else:
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data={
+                            **self.config_entry.data,
+                            CONF_GAS_MEMBER_ID: member_id,
+                            CONF_GAS_MEMBER_PWD: member_pwd,
+                        },
+                    )
+                    # entry.data만 바꾸면(옵션이 아니라) update_listener가 안 불려서 다음
+                    # 재시작 전까진 새 로그인 정보가 실제로 쓰이지 않는다 - 바로 반영되게
+                    # 명시적으로 reload.
+                    self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+                    return self.async_create_entry(
+                        data={**self.config_entry.options, CONF_GAS_CHECK_TIME: check_time}
+                    )
 
         return self.async_show_form(
             step_id="gas_login",
@@ -241,6 +242,7 @@ class VnrisaOptionsFlow(OptionsFlow):
                     vol.Required(CONF_GAS_MEMBER_PWD): selector.TextSelector(
                         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                     ),
+                    vol.Required(CONF_GAS_CHECK_TIME, default=current_check_time): str,
                 }
             ),
             errors=errors,

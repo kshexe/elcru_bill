@@ -43,24 +43,23 @@
       "init": {
         "title": "Elkeuru Management Fee settings",
         "menu_options": {
-          "schedule": "Gas check time",
+          "bill_info": "Bill check schedule",
           "gas_login": "Gas login",
           "kocom_login": "Kocom Energy login",
           "citywaste_login": "Food waste login"
         }
       },
-      "schedule": {
-        "title": "Gas check time",
-        "data": {
-          "gas_check_time": "Daily check time (HH:MM)"
-        }
+      "bill_info": {
+        "title": "Management bill (vnrisa) check schedule",
+        "description": "The bill has no login and no fixed polling interval - it's only fetched when you paste that month's link into the 'Bill link' text entity. There is nothing to configure here."
       },
       "gas_login": {
         "title": "Gas login",
-        "description": "Re-enter this if your gas account password changed - it will be re-verified on save.",
+        "description": "Re-enter this if your gas account password changed - it will be re-verified on save. The daily check time can also be changed here.",
         "data": {
           "gas_member_id": "Gas account ID",
-          "gas_member_pwd": "Gas account password"
+          "gas_member_pwd": "Gas account password",
+          "gas_check_time": "Daily check time (HH:MM)"
         }
       },
       "kocom_login": {
@@ -74,7 +73,7 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Login for citywaste.or.kr. The very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month plus this month's live total, on the 1st of each month.",
+        "description": "Login for citywaste.or.kr.\n\nLive check schedule: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password"
