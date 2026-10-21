@@ -14,14 +14,11 @@
 """
 from __future__ import annotations
 
-import logging
 import re
 from datetime import date
 
 import aiohttp
 from bs4 import BeautifulSoup
-
-_LOGGER = logging.getLogger(__name__)
 
 BASE = "https://www.citywaste.or.kr"
 LOGIN_URL = f"{BASE}/actionLoginNew.do"
@@ -40,8 +37,8 @@ HEADERS = {
 
 _DISCHARGE_ORIGIN_RE = re.compile(r"배출원\s*:\s*.*?(\d+)\s*-\s*(\d+)")
 # 정산내역 페이지 제목("2026년 10월 음식물 쓰레기 정산정보")에 서버가 직접 달을
-# 라벨링해서 준다 - kocom/GSE/관리비는 다 이런 서버 쪽 라벨을 쓰는데 여기만 우리가
-# 요청한 년월을 그대로 믿고 있었어서, 이 라벨로 교차검증한다.
+# 라벨링해서 준다 - kocom/GSE/관리비처럼 이 서버 쪽 라벨을 그대로 쓴다(우리가 요청한
+# 년월은 그 라벨을 못 찾았을 때만 쓰는 fallback).
 _PAGE_MONTH_RE = re.compile(r"(\d{4})년\s*(\d{1,2})월\s*음식물\s*쓰레기")
 
 # 로그인 실패를 뜻하는 코드만 에러로 본다 - "PW"(비밀번호 변경 권고)는 로그인 자체는
@@ -206,15 +203,8 @@ async def fetch_citywaste_history(
             parsed = _parse_charge_page(html)
             if parsed is None:
                 continue
-            requested_month = f"{year:04d}-{month:02d}"
             page_month = parsed.pop("page_month", None)
-            if page_month and page_month != requested_month:
-                _LOGGER.warning(
-                    "음쓰(citywaste) 요청한 달(%s)과 페이지에 표시된 달(%s)이 달라서 "
-                    "페이지 쪽 라벨을 신뢰합니다",
-                    requested_month, page_month,
-                )
-            parsed["month"] = page_month or requested_month
+            parsed["month"] = page_month or f"{year:04d}-{month:02d}"
             if dong is None and parsed.get("dong") and parsed.get("ho"):
                 dong, ho = parsed["dong"], parsed["ho"]
             rows.append(parsed)
