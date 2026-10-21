@@ -9,21 +9,13 @@
           "gas_member_pwd": "Gas account password"
         }
       },
-      "kocom_user": {
-        "title": "Elkeuru Management Fee - Kocom",
-        "description": "Enter your Kocom ID to auto-discover the complex's wall-pad server address.",
-        "data": {
-          "kocom_username": "Kocom ID"
-        }
-      },
       "kocom_account": {
         "title": "Elkeuru Management Fee - Kocom login",
-        "description": "The server address was filled in automatically. Enter your password.",
+        "description": "Enter your Kocom ID and password - the complex server address is looked up automatically and verified in one step.",
         "data": {
-          "kocom_ip": "Wall-pad server IP",
           "kocom_username": "Kocom ID",
           "kocom_password": "Kocom password",
-          "kocom_update_interval": "Poll interval (seconds)"
+          "kocom_update_interval": "Live poll interval (seconds)"
         }
       }
     },
@@ -68,7 +60,7 @@
         "data": {
           "kocom_username": "Kocom ID",
           "kocom_password": "Kocom password",
-          "kocom_update_interval": "Poll interval (seconds)"
+          "kocom_update_interval": "Live poll interval (seconds)"
         }
       },
       "citywaste_login": {

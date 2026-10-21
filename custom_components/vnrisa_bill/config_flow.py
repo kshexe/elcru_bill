@@ -70,7 +70,6 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
     def __init__(self) -> None:
         self._gas_data: dict[str, Any] = {}
         self._kocom_username: str = ""
-        self._kocom_ip: str = ""
 
     async def async_step_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """① GSE 도시가스 로그인."""
@@ -89,18 +88,23 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
                 errors["base"] = "cannot_connect"
             else:
                 self._gas_data = {CONF_GAS_MEMBER_ID: member_id, CONF_GAS_MEMBER_PWD: member_pwd}
-                return await self.async_step_kocom_user()
+                return await self.async_step_kocom_account()
 
         return self.async_show_form(step_id="user", data_schema=GAS_SCHEMA, errors=errors)
 
-    async def async_step_kocom_user(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """② 코콤 아이디로 단지 월패드 서버 IP 조회 (kocom_energy 원본과 동일한 방식)."""
+    async def async_step_kocom_account(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """② 코콤 아이디/비밀번호로 서버 주소 자동 조회 + 인증까지 한 화면에서 (옵션의
+        재로그인 화면 - async_step_kocom_login과 같은 패턴). 원래는 "아이디만 입력 →
+        IP 조회" 화면이 따로 있었는데(kocom_energy 원본 방식), 옵션 쪽은 이미 한
+        화면으로 합쳐져 있었던 거라 최초 설정도 똑같이 맞췄다."""
         errors: dict[str, str] = {}
         if user_input is not None:
             self._kocom_username = user_input[CONF_KOCOM_USERNAME].strip()
+            kocom_password = user_input[CONF_KOCOM_PASSWORD]
+            update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
+
             try:
-                self._kocom_ip = await _lookup_kocom_ip(self._kocom_username)
-                return await self.async_step_kocom_account()
+                ip = await _lookup_kocom_ip(self._kocom_username)
             except aiohttp.ClientError:
                 errors["base"] = "cannot_connect"
             except TimeoutError:
@@ -110,55 +114,39 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
             except Exception:  # noqa: BLE001
                 _LOGGER.exception("코콤 서버 IP 조회 중 알 수 없는 오류")
                 errors["base"] = "cannot_connect"
+            else:
+                hashed_username = string_to_padded_hex(md5_hashing(self._kocom_username), 80)
+                hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
+                fcm = string_to_padded_hex("", 512)
+                phone = string_to_padded_hex("", 32)
 
-        return self.async_show_form(
-            step_id="kocom_user",
-            data_schema=vol.Schema({vol.Required(CONF_KOCOM_USERNAME): str}),
-            errors=errors,
-        )
+                api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
+                try:
+                    authenticated = await api.authenticate()
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
+                    authenticated = False
 
-    async def async_step_kocom_account(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """③ 코콤 IP/아이디/비밀번호로 실제 인증 검증 후 전부 저장."""
-        errors: dict[str, str] = {}
-        if user_input is not None:
-            ip = user_input[CONF_KOCOM_IP]
-            kocom_username = user_input[CONF_KOCOM_USERNAME]
-            kocom_password = user_input[CONF_KOCOM_PASSWORD]
-            update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
-
-            hashed_username = string_to_padded_hex(md5_hashing(kocom_username), 80)
-            hashed_password = string_to_padded_hex(md5_hashing(kocom_password), 80)
-            fcm = string_to_padded_hex("", 512)
-            phone = string_to_padded_hex("", 32)
-
-            api = KocomAPI(ip=ip, username=hashed_username, password=hashed_password, fcm=fcm, phone=phone)
-            try:
-                authenticated = await api.authenticate()
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("코콤 인증 중 알 수 없는 오류")
-                authenticated = False
-
-            if authenticated:
-                return self.async_create_entry(
-                    title="엘크루 관리비",
-                    data={
-                        **self._gas_data,
-                        CONF_KOCOM_IP: ip,
-                        CONF_KOCOM_USERNAME: hashed_username,
-                        CONF_KOCOM_PASSWORD: hashed_password,
-                        "kocom_fcm": fcm,
-                        "kocom_phone": phone,
-                        CONF_KOCOM_UPDATE_INTERVAL: update_interval,
-                        "kocom_original_username": kocom_username,
-                    },
-                )
-            errors["base"] = "auth_error"
+                if authenticated:
+                    return self.async_create_entry(
+                        title="엘크루 관리비",
+                        data={
+                            **self._gas_data,
+                            CONF_KOCOM_IP: ip,
+                            CONF_KOCOM_USERNAME: hashed_username,
+                            CONF_KOCOM_PASSWORD: hashed_password,
+                            "kocom_fcm": fcm,
+                            "kocom_phone": phone,
+                            CONF_KOCOM_UPDATE_INTERVAL: update_interval,
+                            "kocom_original_username": self._kocom_username,
+                        },
+                    )
+                errors["base"] = "auth_error"
 
         return self.async_show_form(
             step_id="kocom_account",
             data_schema=vol.Schema(
                 {
-                    vol.Required(CONF_KOCOM_IP, default=self._kocom_ip): str,
                     vol.Required(CONF_KOCOM_USERNAME, default=self._kocom_username): str,
                     vol.Required(CONF_KOCOM_PASSWORD): selector.TextSelector(
                         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)

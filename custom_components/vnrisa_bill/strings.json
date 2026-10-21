@@ -9,21 +9,13 @@
           "gas_member_pwd": "가스 비밀번호"
         }
       },
-      "kocom_user": {
-        "title": "엘크루 관리비 - 코콤",
-        "description": "코콤 아이디를 입력하면 단지 월패드 서버 주소를 자동으로 찾습니다.",
-        "data": {
-          "kocom_username": "코콤 아이디"
-        }
-      },
       "kocom_account": {
         "title": "엘크루 관리비 - 코콤 로그인",
-        "description": "서버 주소가 자동으로 채워졌습니다. 비밀번호를 입력하세요.",
+        "description": "코콤 아이디/비밀번호를 입력하면 단지 월패드 서버 주소를 자동으로 찾아 인증까지 진행합니다.",
         "data": {
-          "kocom_ip": "월패드 서버 IP",
           "kocom_username": "코콤 아이디",
           "kocom_password": "코콤 비밀번호",
-          "kocom_update_interval": "조회주기 (초)"
+          "kocom_update_interval": "실시간 조회주기 (초)"
         }
       }
     },
@@ -68,7 +60,7 @@
         "data": {
           "kocom_username": "코콤 아이디",
           "kocom_password": "코콤 비밀번호",
-          "kocom_update_interval": "조회주기 (초)"
+          "kocom_update_interval": "실시간 조회주기 (초)"
         }
       },
       "citywaste_login": {

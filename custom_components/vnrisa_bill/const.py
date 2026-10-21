@@ -34,7 +34,7 @@ CONF_KOCOM_USERNAME = "kocom_username"
 CONF_KOCOM_PASSWORD = "kocom_password"
 CONF_KOCOM_IP = "kocom_ip"
 CONF_KOCOM_UPDATE_INTERVAL = "kocom_update_interval"
-DEFAULT_KOCOM_UPDATE_INTERVAL = 3600
+DEFAULT_KOCOM_UPDATE_INTERVAL = 1800
 
 CONF_CITYWASTE_ID = "citywaste_id"
 CONF_CITYWASTE_PWD = "citywaste_pwd"
