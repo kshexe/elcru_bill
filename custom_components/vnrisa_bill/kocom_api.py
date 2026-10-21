@@ -141,7 +141,7 @@ class KocomAPI:
                 menu_response = (await asyncio.wait_for(reader.read(1024), timeout=10.0)).hex()
                 _LOGGER.debug(f'메뉴 정보 응답 패킷: {menu_response}')
                 self.energy_disp_type = menu_response[96:100]
-                _LOGGER.error(f'[진단] 에너지 조회 유형 : {self.energy_disp_type} (메뉴 응답 길이: {len(menu_response)})')
+                _LOGGER.debug(f'에너지 조회 유형 : {self.energy_disp_type}')
             except asyncio.TimeoutError:
                 _LOGGER.error("메뉴 조회 timeout")
                 return {}
@@ -189,7 +189,10 @@ class KocomAPI:
             await writer.drain()
 
             try:
-                gnergy_response = (await asyncio.wait_for(reader.read(1024), timeout=10.0)).hex()
+                # 메뉴/주소 응답은 보통 즉시 캐시에서 오지만, 에너지 응답은 월패드가
+                # 계량기 쪽에서 직접 읽어와야 해서 더 걸릴 수 있다(실측상 10초로는
+                # 종종 모자랐음) - 이 읽기만 넉넉하게 20초로 늘렸다.
+                gnergy_response = (await asyncio.wait_for(reader.read(1024), timeout=20.0)).hex()
                 _LOGGER.debug(f'에너지 정보 수신 패킷: {gnergy_response}')
 
                 if len(gnergy_response) < 500:
