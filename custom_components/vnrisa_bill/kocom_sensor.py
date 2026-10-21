@@ -15,8 +15,6 @@ import math
 from datetime import timedelta
 from typing import Any
 
-from homeassistant.components.recorder import get_instance
-from homeassistant.components.recorder.statistics import statistics_during_period
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
@@ -24,29 +22,12 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
-from homeassistant.helpers.storage import Store
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
 
 from .const import CONF_KOCOM_IP, CONF_KOCOM_PASSWORD, CONF_KOCOM_UPDATE_INTERVAL, CONF_KOCOM_USERNAME, DOMAIN
 from .kocom_api import KocomAPI
 
 _LOGGER = logging.getLogger(__name__)
-
-# 이 집에서 코콤/엘크루 관리비가 생기기 전부터(2024년초~) "전월사용량"을 따로 계산해
-# 쌓아두던 더 오래된 템플릿 센서 - 가스/수도엔 이런 긴 과거 기록이 없어 전기만 해당.
-# 한 번만 history에 심어주는 용도라, 이 통계가 없는 환경(다른 설치)에서는 조용히 그냥
-# 건너뛴다.
-#
-# 처음엔 sensor.jeongiyogeum_kwhto_kwh(더 오래된 원시 계량 엔티티)로 복원했었는데,
-# 실제 2026년 8월 고지서(924kWh)와 비교해보니 그 쪽도, 코콤이 실시간으로 주는
-# electricity_usage_last_month/two_months_ago 필드도 둘 다 틀렸다(코콤 쪽은 거의
-# 정확히 2배인 1837.4 - 실측으로 확인됨). 이 전월사용량(반올림) 템플릿의 과거 기록만
-# 실제 고지서 값과 일치해서 이걸로 바꿨다 - 코콤의 last_month/two_months_ago 필드는
-# history 용도로 더 이상 신뢰하지 않는다(아래 _handle_coordinator_update 참고).
-_OLD_ELECTRICITY_STATISTIC_ID = "sensor.jeongi_jeonweolsayongryang_banolrim"
-# 올려서 재배포하면 저장된 history_seed_version이 이보다 낮은 기존 엔티티는 과거
-# history를 버리고 위 소스로 다시 채운다(소스를 바꿀 때마다 올릴 버전 번호).
-_HISTORY_SEED_VERSION = 2
 
 # 코콤도, 위 과거 통계도 둘 다 비어있는 달(그 시기 자체에 기기가 꺼져있던 경우, 예:
 # 2026-04)은 vnrisa 관리비 고지서 쪽 전기 사용량으로 메운다 - 거긴 코콤과 무관하게
@@ -65,8 +46,8 @@ def _supplement_from_vnrisa(hass: HomeAssistant, history: dict[str, Any]) -> Non
 
 def _normalize_month(raw: str | None) -> str | None:
     """코콤이 this_month/last_month/two_months_ago로 주는 건 'YYYYMM'(하이픈 없음) -
-    history 쪽(_seed_electricity_history, vnrisa/GSE)은 전부 'YYYY-MM'을 쓰므로 여기서
-    맞춰준다. 포맷이 다르면(응답 깨짐 등) None."""
+    history 쪽(vnrisa/GSE)은 전부 'YYYY-MM'을 쓰므로 여기서 맞춰준다. 포맷이
+    다르면(응답 깨짐 등) None."""
     if not raw or len(raw) != 6 or not raw.isdigit():
         return None
     return f"{raw[:4]}-{raw[4:]}"
@@ -105,47 +86,6 @@ def _nearest_year_ago(history: dict[str, Any], this_month: str) -> Any | None:
     candidates = [m for m in history if m <= threshold]
     return history[max(candidates)] if candidates else None
 
-
-async def _seed_electricity_history(hass: HomeAssistant) -> dict[str, float] | None:
-    """_OLD_ELECTRICITY_STATISTIC_ID("전기 전월사용량(반올림)")는 그 값이 "지난달
-    사용량"이라 한 달 내내 같은 값으로 고정돼 있다 - 그래서 하루 단위로 한 번씩만
-    읽어서, 그 값을 기록된 달(recorded-month)보다 한 달 앞선 실제 사용월로 당겨서
-    history를 만든다. 값이 0인 날(소스가 죽어서 템플릿이 기본값만 내는 기간)은 버린다.
-
-    오류가 나면 None을 돌려줘서(호출한 쪽이 history_seed_version을 올리지 않게) 다음
-    재시작에 다시 시도하게 한다 - 통계 자체가 없는 설치(이 집 외 다른 사람)에서는 빈
-    dict({})가 정상적으로 돌아오고, 그건 재시도해도 의미 없으니 그대로 버전을 올린다."""
-    start = datetime.datetime(2020, 1, 1, tzinfo=datetime.timezone.utc)
-    try:
-        rows = await get_instance(hass).async_add_executor_job(
-            statistics_during_period, hass, start, None, {_OLD_ELECTRICITY_STATISTIC_ID}, "day", None, {"state"}
-        )
-    except Exception as e:  # noqa: BLE001
-        _LOGGER.warning("과거 전기 사용량 통계 복원 실패(다음 재시작에 재시도): %s", e)
-        return None
-
-    def _row_start(row: dict) -> datetime.datetime:
-        raw_start = row["start"]
-        if isinstance(raw_start, datetime.datetime):
-            # recorder.statistics.statistics_during_period()을 직접 부르면 datetime
-            # 객체로 온다 - WS API(recorder/statistics_during_period)가 밀리초 정수로
-            # 바꿔 내려주는 건 그쪽 JSON 응답 포맷일 뿐, 내부 함수 리턴값은 다르다.
-            # 숫자인 줄 알고 1000으로 나누면 전부 1970년 근처로 뭉친다(실제 겪은 버그).
-            return raw_start if raw_start.tzinfo else raw_start.replace(tzinfo=datetime.timezone.utc)
-        return datetime.datetime.fromtimestamp(raw_start, tz=datetime.timezone.utc)
-
-    recorded_month_sample: dict[str, float] = {}
-    for row in sorted(rows.get(_OLD_ELECTRICITY_STATISTIC_ID, []), key=_row_start):
-        recorded_month = _row_start(row).strftime("%Y-%m")
-        if recorded_month in recorded_month_sample:
-            continue  # 그 달 값은 고정이라 하루치만 있으면 충분
-        value = row.get("state")
-        if value:  # 0/None(소스 죽은 기간)은 버림
-            recorded_month_sample[recorded_month] = value
-
-    monthly = {_month_offset(month, -1): value for month, value in recorded_month_sample.items()}
-    _LOGGER.warning("과거 전기 사용량 통계 복원 결과: %d개월", len(monthly))
-    return monthly
 
 # 전기/가스/수도만 상단에 바로 보이고, 나머지(진단용 조회시각)는 진단 카테고리로
 # 내려간다 - vnrisa/GSE 쪽과 같은 기준.
@@ -245,12 +185,8 @@ async def async_setup_kocom_entry(
 
     await coordinator.async_config_entry_first_refresh()
 
-    # "어느 소스로 history를 채웠는지" 버전 번호는 속성으로 보이면 혼란스러워서 엔티티
-    # 상태가 아니라 별도 Store에 조용히 둔다.
-    seed_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_kocom_seed")
-
     main_sensors = {
-        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data, seed_store)
+        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data)
         for sensor_type, sensor_data in SENSOR_TYPES.items()
     }
     history_sensors = [
@@ -267,11 +203,8 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     _attr_has_entity_name = True
 
-    def __init__(
-        self, coordinator, entry: ConfigEntry, sensor_type: str, sensor_data: dict, seed_store: Store
-    ) -> None:
+    def __init__(self, coordinator, entry: ConfigEntry, sensor_type: str, sensor_data: dict) -> None:
         super().__init__(coordinator)
-        self._seed_store = seed_store
 
         self._sensor_type = sensor_type
         self._attr_name = sensor_data["name"]
@@ -295,8 +228,8 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         # 완료된 달의 사용량 - 코콤이 매 조회마다 알려주는 last_month/two_months_ago를
         # 월별로 쌓아서 history로 만든다(한 번 1837.4처럼 튄 적이 있었지만, 연속 재조회로
-        # 안정적인 걸 확인함 - 간단한 쪽으로 감). 전기만 추가로 검증된 과거 기록을 한 번
-        # 심어온다(코콤 자체는 최근 2~3달치만 알려줘서 그보다 오래된 건 알 수 없음).
+        # 안정적인 걸 확인함 - 간단한 쪽으로 감). RestoreEntity로 재시작 때마다 복원되니
+        # 코콤 자체가 최근 2~3달치만 알려줘도 그 전 기록이 계속 쌓인다.
         self._history: dict[str, float] = {}
 
     async def async_added_to_hass(self) -> None:
@@ -304,28 +237,12 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         if self._sensor_type not in _PROMINENT_TYPES:
             return
 
-        # "어느 소스로 채웠는지" 버전 번호는 엔티티 속성이 아니라 별도 Store에만
-        # 조용히 둔다(화면에 안 보이게).
-        old_seed_version = 0
-        if self._sensor_type == "electricity":
-            seed_data = await self._seed_store.async_load() or {}
-            old_seed_version = seed_data.get("version", 0)
-
         last_state = await self.async_get_last_state()
         if last_state is not None:
             attrs = last_state.attributes or {}
-            if self._sensor_type != "electricity" or old_seed_version >= _HISTORY_SEED_VERSION:
-                for month, value in dict(attrs.get("history", {}) or {}).items():
-                    # 예전 버전에서 소수점으로 저장된 값도 복원하면서 정수로 맞춘다.
-                    self._history.setdefault(month, _round_half_up(value))
-            # else: 전기인데 구버전(옛 소스 기반) 시드라 그 history는 버리고 아래에서
-            # 검증된 소스로 통째로 새로 채운다.
-
-        if self._sensor_type == "electricity" and old_seed_version < _HISTORY_SEED_VERSION:
-            seeded = await _seed_electricity_history(self.hass)
-            if seeded is not None:
-                self._history = {month: _round_half_up(value) for month, value in seeded.items()}
-                await self._seed_store.async_save({"version": _HISTORY_SEED_VERSION})
+            for month, value in dict(attrs.get("history", {}) or {}).items():
+                # 예전 버전에서 소수점으로 저장된 값도 복원하면서 정수로 맞춘다.
+                self._history.setdefault(month, _round_half_up(value))
 
         # coordinator.async_add_listener는 "앞으로의" 갱신에만 콜백을 걸어준다 - 엔티티가
         # 생성되기 전에 이미 받아온 첫 조회 데이터(coordinator.data)는 그냥 두면
