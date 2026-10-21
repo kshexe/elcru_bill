@@ -158,11 +158,14 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     async def _citywaste_live_scheduled(_now) -> None:
         await async_refresh_citywaste_live(hass, entry)
 
-    entry.async_on_unload(
-        async_track_time_interval(
-            hass, _citywaste_live_scheduled, datetime.timedelta(seconds=citywaste_refresh_interval)
+    if citywaste_refresh_interval:
+        # 0 = 꺼짐(코콤의 CONF_KOCOM_UPDATE_INTERVAL과 같은 규칙) - timedelta(seconds=0)로
+        # 등록하면 간격 없이 계속 도는 타이머가 돼버린다.
+        entry.async_on_unload(
+            async_track_time_interval(
+                hass, _citywaste_live_scheduled, datetime.timedelta(seconds=citywaste_refresh_interval)
+            )
         )
-    )
     entry.async_on_unload(entry.add_update_listener(_reload))
 
     return True

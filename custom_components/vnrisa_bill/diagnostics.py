@@ -18,6 +18,8 @@ TO_REDACT = {
     "kocom_phone",
     "kocom_original_username",
     "kocom_ip",
+    "citywaste_id",
+    "citywaste_pwd",
 }
 
 
@@ -36,5 +38,9 @@ async def async_get_config_entry_diagnostics(
         "gas": {
             "last_error": runtime.gas_error,
             "sensor_count": len(runtime.gas_sensors),
+        },
+        "citywaste": {
+            "last_error": runtime.citywaste_error,
+            "sensor_count": len(runtime.citywaste_sensors),
         },
     }

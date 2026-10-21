@@ -18,11 +18,13 @@ from typing import Any
 from homeassistant.components.sensor import SensorEntity
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
+from homeassistant.helpers import entity_registry as er
 from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.entity import EntityCategory
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 from homeassistant.helpers.update_coordinator import CoordinatorEntity, DataUpdateCoordinator
+from homeassistant.util import slugify
 
 from .const import CONF_KOCOM_IP, CONF_KOCOM_PASSWORD, CONF_KOCOM_UPDATE_INTERVAL, CONF_KOCOM_USERNAME, DOMAIN
 from .kocom_api import KocomAPI
@@ -33,11 +35,19 @@ _LOGGER = logging.getLogger(__name__)
 # 2026-04)은 vnrisa 관리비 고지서 쪽 전기 사용량으로 메운다 - 거긴 코콤과 무관하게
 # 그 달 고지서를 붙여넣을 때마다 따로 쌓인다. vnrisa는 2026-03부터만 있어서 그보다
 # 오래된 공백(예: 2025-09)은 이것으로도 못 채운다.
-_VNRISA_ELECTRICITY_ENTITY_ID = "sensor.elkeuru_gonggwageum_jeongi_sayongryang_vnrisa"
+_VNRISA_ELECTRICITY_KEY = "전기 사용량"  # sensor.py의 VnrisaItemSensor가 쓰는 "안정적인 key"
 
 
-def _supplement_from_vnrisa(hass: HomeAssistant, history: dict[str, Any]) -> None:
-    state = hass.states.get(_VNRISA_ELECTRICITY_ENTITY_ID)
+def _supplement_from_vnrisa(hass: HomeAssistant, entry_id: str, history: dict[str, Any]) -> None:
+    """entity_id를 그대로 박아두면 기기/엔티티 이름이 바뀔 때(has_entity_name이 이름
+    바뀌면 entity_id도 따라 바꿈 - 실제로 "엘크루 공과금"→"관리비" 때 한 번 조용히
+    끊긴 적 있음) 깨진다. unique_id(=entry_id + slugify(안정적인 key))는 안 바뀌니
+    그걸로 레지스트리에서 매번 다시 찾는다."""
+    registry = er.async_get(hass)
+    entity_id = registry.async_get_entity_id("sensor", DOMAIN, f"{entry_id}_{slugify(_VNRISA_ELECTRICITY_KEY)}")
+    if entity_id is None:
+        return
+    state = hass.states.get(entity_id)
     if state is None:
         return
     for month, value in (state.attributes.get("history") or {}).items():
@@ -206,6 +216,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
     def __init__(self, coordinator, entry: ConfigEntry, sensor_type: str, sensor_data: dict) -> None:
         super().__init__(coordinator)
 
+        self._entry_id = entry.entry_id
         self._sensor_type = sensor_type
         self._attr_name = sensor_data["name"]
         self._attr_unique_id = f"{entry.entry_id}_kocom_{sensor_type}"
@@ -265,7 +276,7 @@ class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 # async_added_to_hass 시점엔 아직 없을 수 있다 - 매 폴링마다(또는
                 # async_added_to_hass가 수동으로 한 번 불러주는 시점에) 다시 시도하면
                 # 결국 한 번은 걸린다.
-                _supplement_from_vnrisa(self.hass, self._history)
+                _supplement_from_vnrisa(self.hass, self._entry_id, self._history)
             this_month = _normalize_month(self.coordinator.data.get("this_month"))
             if this_month:
                 _prune_history(self._history, this_month)
