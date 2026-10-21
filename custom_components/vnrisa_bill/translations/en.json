@@ -43,10 +43,10 @@
       "init": {
         "title": "Elkeuru Management Fee settings",
         "menu_options": {
-          "bill_info": "Bill check schedule",
-          "gas_login": "Gas login",
-          "kocom_login": "Kocom Energy login",
-          "citywaste_login": "Food waste login"
+          "bill_info": "Bill settings",
+          "gas_login": "Gas settings",
+          "kocom_login": "Kocom Energy settings",
+          "citywaste_login": "Food waste settings"
         }
       },
       "bill_info": {
@@ -54,7 +54,7 @@
         "description": "The bill has no login and no fixed polling interval - it's only fetched when you paste that month's link into the 'Bill link' text entity. There is nothing to configure here."
       },
       "gas_login": {
-        "title": "Gas login",
+        "title": "Gas (GSE) login",
         "description": "Re-enter this if your gas account password changed - it will be re-verified on save. The daily check time can also be changed here.",
         "data": {
           "gas_member_id": "Gas account ID",
@@ -73,10 +73,11 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Login for citywaste.or.kr.\n\nLive check schedule: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
+        "description": "Login for citywaste.or.kr.\n\nLive check interval: refreshes just this month's discharge amount/count via the login-free API (default 1800s, change below).\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
-          "citywaste_pwd": "citywaste password"
+          "citywaste_pwd": "citywaste password",
+          "citywaste_refresh_interval": "Live check interval (seconds)"
         }
       }
     },

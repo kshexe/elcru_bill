@@ -39,3 +39,10 @@ DEFAULT_KOCOM_UPDATE_INTERVAL = 3600
 CONF_CITYWASTE_ID = "citywaste_id"
 CONF_CITYWASTE_PWD = "citywaste_pwd"
 DEFAULT_CITYWASTE_CHECK_TIME = "00:00"
+
+# 정산내역(월 1회, 위 CHECK_TIME)과 분리된 실시간 조회(로그인 없는 API) 전용 주기 -
+# staiji/citywaste_korea가 쓰는 고정 30분, oukene/citywaste의 옵션 화면 기본값과도
+# 같다(oukene 최초 설치 폼에만 60분이 있었는데 그건 Required()에 default를 잘못
+# 넘긴 버그로 보임 - staiji 쪽처럼 30분을 정상값으로 봄).
+CONF_CITYWASTE_REFRESH_INTERVAL = "citywaste_refresh_interval"
+DEFAULT_CITYWASTE_REFRESH_INTERVAL = 1800

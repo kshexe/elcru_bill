@@ -169,9 +169,17 @@ def _month_back(base: date, months_back: int) -> tuple[int, int]:
     return year, month + 1
 
 
+async def fetch_citywaste_live(tag_id: str, dong: str, ho: str) -> dict | None:
+    """로그인 없이 되는 실시간 조회 API만 따로 호출한다 - fetch_citywaste_history의
+    로그인+정산내역 페이지 조회(월 1회만 도는 무거운 쪽)와 분리해서, 이번 달 배출량/
+    배출건수만 더 자주(기본 1800초) 가볍게 갱신하고 싶을 때 쓴다."""
+    async with aiohttp.ClientSession(headers=HEADERS, timeout=aiohttp.ClientTimeout(total=20)) as session:
+        return await _fetch_current_month_live(session, tag_id, dong, ho)
+
+
 async def fetch_citywaste_history(
     member_id: str, member_pwd: str, months_back: int = 1
-) -> tuple[list[dict], float | int | None]:
+) -> tuple[list[dict], float | int | None, str | None, str | None, str | None]:
     """로그인 후 과거 `months_back`개월치(이번 달은 제외, 이미 끝난 달만) 음쓰
     정산내역을 달마다 따로 조회한다. 그 달 데이터가 아직 없으면 조용히 건너뛴다.
 
@@ -180,7 +188,9 @@ async def fetch_citywaste_history(
     에서 뽑은 동/호수)만으로 채운다 - 조회마다 "이번 달 0원" 페이지 요청을 하나 아낀다.
 
     kg당 단가는 달마다 달라지지 않으니(요금은 "단가조회" 팝업 기준 고정값) 한 번만
-    같이 조회해서 별도로 돌려준다."""
+    같이 조회해서 별도로 돌려준다. 태그ID/동/호수도 같이 돌려줘서, 호출한 쪽이
+    fetch_citywaste_live로 더 자주 실시간 조회만 따로 돌릴 때 재로그인 없이 그대로
+    쓸 수 있게 한다."""
     rows: list[dict] = []
     today = date.today()
     async with aiohttp.ClientSession(
@@ -215,4 +225,4 @@ async def fetch_citywaste_history(
             if live is not None:
                 current_row.update(live)
         rows.append(current_row)
-    return rows, unit_price
+    return rows, unit_price, tag_id, dong, ho

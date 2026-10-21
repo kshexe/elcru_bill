@@ -19,6 +19,7 @@ from homeassistant.helpers import selector
 from .const import (
     CONF_CITYWASTE_ID,
     CONF_CITYWASTE_PWD,
+    CONF_CITYWASTE_REFRESH_INTERVAL,
     CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
@@ -26,6 +27,7 @@ from .const import (
     CONF_KOCOM_PASSWORD,
     CONF_KOCOM_UPDATE_INTERVAL,
     CONF_KOCOM_USERNAME,
+    DEFAULT_CITYWASTE_REFRESH_INTERVAL,
     DEFAULT_GAS_CHECK_TIME,
     DEFAULT_KOCOM_UPDATE_INTERVAL,
     DOMAIN,
@@ -320,9 +322,11 @@ class VnrisaOptionsFlow(OptionsFlow):
         """음쓰(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
         여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음)."""
         errors: dict[str, str] = {}
+        data = self.config_entry.data
         if user_input is not None:
             member_id = user_input[CONF_CITYWASTE_ID].strip()
             member_pwd = user_input[CONF_CITYWASTE_PWD]
+            refresh_interval = user_input[CONF_CITYWASTE_REFRESH_INTERVAL]
             try:
                 await fetch_citywaste_history(member_id, member_pwd, months_back=1)
             except CitywasteLoginError as err:
@@ -338,6 +342,7 @@ class VnrisaOptionsFlow(OptionsFlow):
                         **self.config_entry.data,
                         CONF_CITYWASTE_ID: member_id,
                         CONF_CITYWASTE_PWD: member_pwd,
+                        CONF_CITYWASTE_REFRESH_INTERVAL: refresh_interval,
                     },
                 )
                 self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
@@ -348,11 +353,15 @@ class VnrisaOptionsFlow(OptionsFlow):
             data_schema=vol.Schema(
                 {
                     vol.Required(
-                        CONF_CITYWASTE_ID, default=self.config_entry.data.get(CONF_CITYWASTE_ID, "")
+                        CONF_CITYWASTE_ID, default=data.get(CONF_CITYWASTE_ID, "")
                     ): str,
                     vol.Required(CONF_CITYWASTE_PWD): selector.TextSelector(
                         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                     ),
+                    vol.Required(
+                        CONF_CITYWASTE_REFRESH_INTERVAL,
+                        default=data.get(CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
                 }
             ),
             errors=errors,

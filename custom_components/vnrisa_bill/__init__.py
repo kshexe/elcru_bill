@@ -24,21 +24,23 @@ import aiohttp
 from homeassistant.config_entries import ConfigEntry
 from homeassistant.core import HomeAssistant
 from homeassistant.helpers import issue_registry as ir
-from homeassistant.helpers.event import async_track_time_change
+from homeassistant.helpers.event import async_track_time_change, async_track_time_interval
 from homeassistant.helpers.storage import Store
 
 from .const import (
     CONF_CITYWASTE_ID,
     CONF_CITYWASTE_PWD,
+    CONF_CITYWASTE_REFRESH_INTERVAL,
     CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
     DEFAULT_CITYWASTE_CHECK_TIME,
+    DEFAULT_CITYWASTE_REFRESH_INTERVAL,
     DEFAULT_GAS_CHECK_TIME,
     DOMAIN,
     PLATFORMS,
 )
-from .citywaste import CitywasteLoginError, fetch_citywaste_history
+from .citywaste import CitywasteLoginError, fetch_citywaste_history, fetch_citywaste_live
 from .gas import GasLoginError, fetch_gas_history
 
 _LOGGER = logging.getLogger(__name__)
@@ -77,6 +79,11 @@ class VnrisaRuntimeData:
     citywaste_sensors: dict[str, Any] = field(default_factory=dict)
     citywaste_timestamp_sensor: Any = None
     citywaste_backfill_store: Store | None = None
+    # 실시간 전용 폴링(async_refresh_citywaste_live)이 매번 로그인하지 않고 바로 쓸 수
+    # 있게, 월 1회 도는 전체 조회(async_refresh_citywaste) 때마다 갱신해둔다.
+    citywaste_tag_id: str | None = None
+    citywaste_dong: str | None = None
+    citywaste_ho: str | None = None
 
 
 async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bool:
@@ -122,6 +129,19 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     entry.async_on_unload(
         async_track_time_change(
             hass, _citywaste_scheduled, hour=citywaste_hour, minute=citywaste_minute, second=0
+        )
+    )
+
+    citywaste_refresh_interval = entry.data.get(
+        CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL
+    )
+
+    async def _citywaste_live_scheduled(_now) -> None:
+        await async_refresh_citywaste_live(hass, entry)
+
+    entry.async_on_unload(
+        async_track_time_interval(
+            hass, _citywaste_live_scheduled, datetime.timedelta(seconds=citywaste_refresh_interval)
         )
     )
     entry.async_on_unload(entry.add_update_listener(_reload))
@@ -226,7 +246,9 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     months_back = 1 if backfilled else 11
 
     try:
-        rows, unit_price = await fetch_citywaste_history(member_id, member_pwd, months_back=months_back)
+        rows, unit_price, tag_id, dong, ho = await fetch_citywaste_history(
+            member_id, member_pwd, months_back=months_back
+        )
     except CitywasteLoginError as err:
         _LOGGER.warning("음쓰(citywaste) 로그인/조회 실패: %s", err)
         runtime.citywaste_error = str(err)
@@ -243,6 +265,34 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     ir.async_delete_issue(hass, DOMAIN, issue_id)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})
+    if tag_id and dong and ho:
+        runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho = tag_id, dong, ho
+    if runtime.citywaste_timestamp_sensor is not None:
+        runtime.citywaste_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+async def async_refresh_citywaste_live(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
+    """정산내역(월 1회, async_refresh_citywaste)과 분리된 실시간 전용 폴링 - 로그인이
+    필요 없는 API만 불러서 이번 달 배출량/배출건수만 더 자주(기본 1800초, 옵션에서
+    변경 가능) 갱신한다. 태그ID/동/호수는 async_refresh_citywaste가 돌 때마다
+    runtime에 캐시해둔 걸 그대로 쓰고, 아직 한 번도 안 돌았으면(캐시가 없으면)
+    조용히 건너뛴다."""
+    from .sensor import sync_citywaste_sensors  # 순환 임포트 방지용 지연 임포트
+
+    runtime = entry.runtime_data
+    if not (runtime.citywaste_tag_id and runtime.citywaste_dong and runtime.citywaste_ho):
+        return
+
+    try:
+        live = await fetch_citywaste_live(runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho)
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.warning("음쓰(citywaste) 실시간 조회 중 통신 오류: %s", err)
+        return
+    if live is None:
+        return
+
+    this_month = datetime.datetime.now().strftime("%Y-%m")
+    sync_citywaste_sensors(entry, [{"month": this_month, "final_amount": 0, **live}])
     if runtime.citywaste_timestamp_sensor is not None:
         runtime.citywaste_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
