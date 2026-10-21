@@ -242,6 +242,10 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         # 안정적인 걸 확인함 - 간단한 쪽으로 감). RestoreEntity로 재시작 때마다 복원되니
         # 코콤 자체가 최근 2~3달치만 알려줘도 그 전 기록이 계속 쌓인다.
         self._history: dict[str, float] = {}
+        # 코콤 연결이 잠깐(또는 오래) 끊겨서 coordinator.data가 비는 동안에도 전월/작년
+        # 센서가 "모름"으로 비지 않게, 마지막으로 성공했을 때의 this_month를 따로
+        # 기억해둔다(KocomUsageHistorySensor.native_value가 이걸 읽음).
+        self._last_known_this_month: str | None = None
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
@@ -254,6 +258,12 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             for month, value in dict(attrs.get("history", {}) or {}).items():
                 # 예전 버전에서 소수점으로 저장된 값도 복원하면서 정수로 맞춘다.
                 self._history.setdefault(month, _round_half_up(value))
+
+        if self._history:
+            # 재시작 시점에 코콤이 아직 안 붙었으면(아래 _handle_coordinator_update가
+            # 실패) this_month를 못 받아오니, history엔 "끝난 달"만 있다는 점을 이용해
+            # 그 다음 달을 this_month로 추정해둔다 - 실제 폴링이 성공하면 바로 덮어씀.
+            self._last_known_this_month = _month_offset(max(self._history), 1)
 
         # coordinator.async_add_listener는 "앞으로의" 갱신에만 콜백을 걸어준다 - 엔티티가
         # 생성되기 전에 이미 받아온 첫 조회 데이터(coordinator.data)는 그냥 두면
@@ -279,6 +289,7 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 _supplement_from_vnrisa(self.hass, self._entry_id, self._history)
             this_month = _normalize_month(self.coordinator.data.get("this_month"))
             if this_month:
+                self._last_known_this_month = this_month
                 _prune_history(self._history, this_month)
         super()._handle_coordinator_update()
 
@@ -339,7 +350,7 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return {}
 
         attrs: dict = {"history": dict(sorted(self._history.items()))}
-        this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
+        this_month = self._last_known_this_month
         if this_month:
             last_m = _month_offset(this_month, -1)
             if last_m in self._history:
@@ -381,7 +392,11 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
 
     @property
     def native_value(self):
-        this_month = _normalize_month((self.coordinator.data or {}).get("this_month"))
+        # coordinator.data가 아니라 source(KocomSensor)가 마지막으로 성공했을 때 기억해둔
+        # this_month를 쓴다 - 코콤 연결이 끊긴 동안엔 coordinator.data가 비어서 매번
+        # 새로 읽으면 "모름"이 되지만, 전월/작년은 어차피 안 바뀌는 과거 값이라 연결이
+        # 끊겼다고 같이 비어 보일 이유가 없다.
+        this_month = self._source._last_known_this_month
         if not this_month:
             return None
         history = self._source._history
