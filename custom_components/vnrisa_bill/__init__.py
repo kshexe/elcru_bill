@@ -70,7 +70,7 @@ class VnrisaRuntimeData:
     gas_sensors: dict[str, Any] = field(default_factory=dict)
     gas_timestamp_sensor: Any = None
 
-    # 음식물쓰레기(citywaste) - 아이디/비밀번호는 entry.data에 저장. backfill_store는
+    # 음쓰(citywaste) - 아이디/비밀번호는 entry.data에 저장. backfill_store는
     # "과거 1년치를 이미 한 번 다 긁었는지"만 기억해서, 매번 12달치를 다시 조회하지
     # 않고 그 뒤로는 최근 2달만 가볍게 갱신한다.
     citywaste_error: str | None = None
@@ -206,10 +206,10 @@ async def async_refresh_gas(hass: HomeAssistant, entry: VnrisaConfigEntry) -> No
 
 
 async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
-    """entry.data에 저장된 아이디/비밀번호로 로그인해서 음식물쓰레기 정산내역을
-    조회해 센서에 반영한다. GSE처럼 한 번에 전체 기간을 안 주고 달마다 따로 요청해야
-    해서, 처음 한 번만 1년치를 긁고(backfill_store에 기록) 그 뒤로는 최근 2달만
-    가볍게 갱신한다."""
+    """entry.data에 저장된 아이디/비밀번호로 로그인해서 음쓰 정산내역을 조회해
+    센서에 반영한다. GSE처럼 한 번에 전체 기간을 안 주고 달마다 따로 요청해야 해서,
+    처음 한 번만 1년치를 긁고(backfill_store에 기록) 그 뒤로는 최근 2달만 가볍게
+    갱신한다."""
     from .sensor import sync_citywaste_sensors  # 순환 임포트 방지용 지연 임포트
 
     runtime = entry.runtime_data
@@ -225,20 +225,20 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     months_back = 2 if backfilled else 12
 
     try:
-        rows = await fetch_citywaste_history(member_id, member_pwd, months_back=months_back)
+        rows, unit_price = await fetch_citywaste_history(member_id, member_pwd, months_back=months_back)
     except CitywasteLoginError as err:
-        _LOGGER.warning("음식물쓰레기(citywaste) 로그인/조회 실패: %s", err)
+        _LOGGER.warning("음쓰(citywaste) 로그인/조회 실패: %s", err)
         runtime.citywaste_error = str(err)
         _create_fetch_issue(hass, issue_id, "citywaste_login_failed", str(err))
         return
     except (aiohttp.ClientError, TimeoutError) as err:
-        _LOGGER.warning("음식물쓰레기(citywaste) 조회 중 통신 오류: %s", err)
+        _LOGGER.warning("음쓰(citywaste) 조회 중 통신 오류: %s", err)
         runtime.citywaste_error = f"조회 실패: {err}"
         _create_fetch_issue(hass, issue_id, "citywaste_login_failed", str(err))
         return
 
     runtime.citywaste_error = None
-    sync_citywaste_sensors(entry, rows)
+    sync_citywaste_sensors(entry, rows, unit_price)
     ir.async_delete_issue(hass, DOMAIN, issue_id)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})

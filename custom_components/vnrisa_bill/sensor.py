@@ -43,8 +43,8 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom energy 제조",
-        "model": "관리비·가스·코콤 관리비",
+        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste 제조",
+        "model": "관리비·가스·코콤 관리비·음쓰",
     }
 
 
@@ -57,7 +57,7 @@ async def async_setup_entry(
     runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각 (vnrisa)", "bill_timestamp")
     runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각 (GSE)", "gas_timestamp")
     runtime.citywaste_timestamp_sensor = VnrisaTimestampSensor(
-        entry, "음식물쓰레기 조회시각 (citywaste)", "citywaste_timestamp"
+        entry, "음쓰 조회시각 (citywaste)", "citywaste_timestamp"
     )
     async_add_entities(
         [runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor, runtime.citywaste_timestamp_sensor]
@@ -243,28 +243,39 @@ def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> No
         runtime.add_sensor_entities(new_entities)
 
 
-def sync_citywaste_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> None:
-    """citywaste.py의 fetch_citywaste_history(음식물쓰레기 RFID 종량기 - 여러 달치) 결과를
-    정산금액/배출량/배출건수 센서에 반영. gas_sensors와 같은 패턴, 별도 dict로 관리."""
+_CITYWASTE_PROMINENT_KEYS = {"음식물쓰레기 배출량", "음식물쓰레기 배출건수"}
+
+
+def sync_citywaste_sensors(
+    entry: VnrisaConfigEntry, rows: list[dict[str, Any]], unit_price: float | int | None = None
+) -> None:
+    """citywaste.py의 fetch_citywaste_history(음쓰 RFID 종량기 - 여러 달치) 결과를
+    정산금액/배출량/배출건수 센서에 반영. gas_sensors와 같은 패턴, 별도 dict로 관리.
+
+    표시명은 "음쓰"로 보이지만 dict의 key(=unique_id 재료)는 예전 그대로 둔다 -
+    여기서 key를 바꾸면 slugify 결과가 달라져서 entity_id가 바뀌고 history가 끊긴다
+    (flatten_bill_items의 key/display_name 분리 원칙과 동일).
+
+    kg당 단가는 달 구분 없는 고정값이라 month 없이(=항상 최신으로 취급) 반영한다."""
     runtime = entry.runtime_data
     new_entities = []
     for row in rows:
         month = row.get("month")
         items = {
             "음식물쓰레기 정산금액": {
-                "display_name": "음식물쓰레기 정산금액 (citywaste)",
+                "display_name": "음쓰 정산금액 (citywaste)",
                 "value": row.get("final_amount"),
                 "unit": "원",
                 "attrs": {},
             },
             "음식물쓰레기 배출량": {
-                "display_name": "음식물쓰레기 배출량 (citywaste)",
+                "display_name": "음쓰 배출량 (citywaste)",
                 "value": row.get("discharge_kg"),
                 "unit": "kg",
                 "attrs": {},
             },
             "음식물쓰레기 배출건수": {
-                "display_name": "음식물쓰레기 배출건수 (citywaste)",
+                "display_name": "음쓰 배출건수 (citywaste)",
                 "value": row.get("discharge_count"),
                 "unit": "회",
                 "attrs": {},
@@ -273,11 +284,24 @@ def sync_citywaste_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]])
         for key, item in items.items():
             existing = runtime.citywaste_sensors.get(key)
             if existing is None:
-                sensor = VnrisaItemSensor(entry, key, item, month)
+                category = None if key in _CITYWASTE_PROMINENT_KEYS else EntityCategory.DIAGNOSTIC
+                sensor = VnrisaItemSensor(entry, key, item, month, entity_category=category)
                 runtime.citywaste_sensors[key] = sensor
                 new_entities.append(sensor)
             else:
                 existing.set_value(item, month)
+
+    if unit_price is not None:
+        key = "음쓰 kg당 단가"
+        item = {"display_name": "음쓰 kg당 단가 (citywaste)", "value": unit_price, "unit": "원/kg", "attrs": {}}
+        existing = runtime.citywaste_sensors.get(key)
+        if existing is None:
+            sensor = VnrisaItemSensor(entry, key, item, None)
+            runtime.citywaste_sensors[key] = sensor
+            new_entities.append(sensor)
+        else:
+            existing.set_value(item, None)
+
     if new_entities and runtime.add_sensor_entities is not None:
         runtime.add_sensor_entities(new_entities)
 
@@ -320,10 +344,17 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
     엔티티 전용이라 읽기 전용 센서에는 애초에 쓸 수 없다."""
 
     _attr_has_entity_name = True
-    _attr_entity_category = EntityCategory.DIAGNOSTIC
 
-    def __init__(self, entry: VnrisaConfigEntry, key: str, item: dict[str, Any], month: str | None) -> None:
+    def __init__(
+        self,
+        entry: VnrisaConfigEntry,
+        key: str,
+        item: dict[str, Any],
+        month: str | None,
+        entity_category: EntityCategory | None = EntityCategory.DIAGNOSTIC,
+    ) -> None:
         self._key = key
+        self._attr_entity_category = entity_category
         self._attr_name = item.get("display_name", key)
         self._attr_unique_id = f"{entry.entry_id}_{slugify(key)}"
         self._attr_device_info = _device_info(entry)

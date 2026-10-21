@@ -1,4 +1,4 @@
-"""citywaste.or.kr(RFID 음식물쓰레기 종량기) 조회 - 두 가지 소스를 섞어 쓴다.
+"""citywaste.or.kr(RFID 음쓰(음식물쓰레기) 종량기) 조회 - 두 가지 소스를 섞어 쓴다.
 
 1) "나의 수수료 조회"(로그인 필요) - 이미 끝난 달의 확정된 정산금액/배출량/배출건수.
    이번달(진행 중)은 아직 정산 배치가 안 돌아서 전부 0으로 나온다.
@@ -24,6 +24,7 @@ BASE = "https://www.citywaste.or.kr"
 LOGIN_URL = f"{BASE}/actionLoginNew.do"
 LOGIN_PAGE_URL = f"{BASE}/ucwmsNew/member/memberLogin.do"
 CHARGE_URL = f"{BASE}/portal/status/selectMyEmissionCharge.do"
+UNIT_PRICE_URL = f"{BASE}/portal/status/selectStdUnitDetail.do"
 QUICK_MONTH_URL = f"{BASE}/portal/status/selectDischargerQuantityQuickMonthNew.do"
 QUICK_MONTH_REFERER = f"{BASE}/portal/status/selectSimpleEmissionQuantity.do"
 
@@ -75,6 +76,26 @@ def _parse_charge_page(html: str) -> dict | None:
     if origin_match:
         result["dong"], result["ho"] = origin_match.group(1), origin_match.group(2)
     return result
+
+
+def _parse_unit_price(html: str) -> float | int | None:
+    """"단가조회" 팝업(selectStdUnitDetail.do) - "1 Kg" 행 바로 옆 칸이 kg당 단가."""
+    soup = BeautifulSoup(html, "html.parser")
+    for tr in soup.find_all("tr"):
+        cells = tr.find_all("td")
+        if len(cells) == 2 and "kg" in cells[0].get_text(strip=True).lower():
+            return _num(cells[1].get_text())
+    return None
+
+
+async def _fetch_unit_price(session: aiohttp.ClientSession) -> float | int | None:
+    try:
+        async with session.get(UNIT_PRICE_URL, headers={"Referer": CHARGE_URL}) as resp:
+            resp.raise_for_status()
+            html = await resp.text()
+    except aiohttp.ClientError:
+        return None
+    return _parse_unit_price(html)
 
 
 async def _login(session: aiohttp.ClientSession, member_id: str, member_pwd: str) -> dict:
@@ -141,9 +162,13 @@ def _month_back(base: date, months_back: int) -> tuple[int, int]:
     return year, month + 1
 
 
-async def fetch_citywaste_history(member_id: str, member_pwd: str, months_back: int = 1) -> list[dict]:
-    """로그인 후 최근 `months_back`개월치(이번달 포함) 음식물쓰레기 정산내역을 달마다
-    따로 조회한다. 그 달 데이터가 아직 없으면(예: 이번달 중간) 조용히 건너뛴다.
+async def fetch_citywaste_history(
+    member_id: str, member_pwd: str, months_back: int = 1
+) -> tuple[list[dict], float | int | None]:
+    """로그인 후 최근 `months_back`개월치(이번달 포함) 음쓰 정산내역을 달마다 따로
+    조회한다. 그 달 데이터가 아직 없으면(예: 이번달 중간) 조용히 건너뛴다. kg당 단가는
+    달마다 달라지지 않으니(요금은 "단가조회" 팝업 기준 고정값) 한 번만 같이 조회해서
+    별도로 돌려준다.
 
     이번달(offset 0)은 정산 배치가 아직 안 돌아서 "나의 수수료 조회"가 0만 주는 경우가
     많다 - 그 경우 로그인 때 받은 태그ID + 이 페이지에서 뽑은 동/호수로 실시간 조회
@@ -155,6 +180,7 @@ async def fetch_citywaste_history(member_id: str, member_pwd: str, months_back: 
     ) as session:
         memb_info = await _login(session, member_id, member_pwd)
         tag_id = memb_info.get("tagprintcd")
+        unit_price = await _fetch_unit_price(session)
         for offset in range(months_back):
             year, month = _month_back(today, offset)
             async with session.post(
@@ -173,4 +199,4 @@ async def fetch_citywaste_history(member_id: str, member_pwd: str, months_back: 
                 if live is not None:
                     parsed.update(live)
             rows.append(parsed)
-    return rows
+    return rows, unit_price

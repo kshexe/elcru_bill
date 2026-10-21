@@ -16,7 +16,7 @@ parkingweb/myhome_parking과 같은 패턴으로, 로그인 정보는 config flo
 센서를 하나의 통합(기기)으로 모아서 관리하기 위함. 소켓 프로토콜 자체(kocom_api.py/
 kocom_util.py)는 원본 그대로 포팅 - 바이트 오프라인 파싱 로직이라 손대지 않았다.
 
-citywaste(RFID 음식물쓰레기 종량기)도 GSE와 같은 아이디/비밀번호 로그인이라 Token
+citywaste(RFID 음쓰(음식물쓰레기) 종량기)도 GSE와 같은 아이디/비밀번호 로그인이라 Token
 문제가 없다. 다만 GSE처럼 전체 기간을 한 번에 주는 API가 없어 달마다 따로 조회해야
 해서(citywaste.py), 매일이 아니라 매달 1일에만 확인한다 - 이미 끝난 달 정산내역은
 그 뒤로 안 바뀌니 매일 다시 긁을 이유가 없다.

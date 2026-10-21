@@ -315,7 +315,7 @@ class VnrisaOptionsFlow(OptionsFlow):
         )
 
     async def async_step_citywaste_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
-        """음식물쓰레기(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
+        """음쓰(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
         여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음)."""
         errors: dict[str, str] = {}
         if user_input is not None:
@@ -324,10 +324,10 @@ class VnrisaOptionsFlow(OptionsFlow):
             try:
                 await fetch_citywaste_history(member_id, member_pwd, months_back=1)
             except CitywasteLoginError as err:
-                _LOGGER.warning("음식물쓰레기(citywaste) 로그인 검증 실패: %s", err)
+                _LOGGER.warning("음쓰(citywaste) 로그인 검증 실패: %s", err)
                 errors["base"] = "invalid_auth"
             except Exception:  # noqa: BLE001
-                _LOGGER.exception("음식물쓰레기(citywaste) 로그인 검증 중 알 수 없는 오류")
+                _LOGGER.exception("음쓰(citywaste) 로그인 검증 중 알 수 없는 오류")
                 errors["base"] = "cannot_connect"
             else:
                 self.hass.config_entries.async_update_entry(

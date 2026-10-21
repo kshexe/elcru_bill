@@ -46,7 +46,7 @@
           "schedule": "도시가스 확인시각",
           "gas_login": "도시가스 로그인",
           "kocom_login": "코콤 에너지 로그인",
-          "citywaste_login": "음식물쓰레기 로그인"
+          "citywaste_login": "음쓰 로그인"
         }
       },
       "schedule": {
@@ -73,7 +73,7 @@
         }
       },
       "citywaste_login": {
-        "title": "음식물쓰레기(citywaste) 로그인",
+        "title": "음쓰(citywaste) 로그인",
         "description": "citywaste.or.kr 로그인 정보입니다. 처음 입력하면 최근 1년치를 한 번에 가져오고, 그 뒤로는 매달 1일에 최근 2개월만 갱신합니다.",
         "data": {
           "citywaste_id": "citywaste 아이디",
@@ -103,8 +103,8 @@
       "description": "코콤 월패드 서버 인증이 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 코콤 에너지 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
     },
     "citywaste_login_failed": {
-      "title": "음식물쓰레기(citywaste) 로그인/조회 실패",
-      "description": "citywaste 조회가 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 음식물쓰레기 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
+      "title": "음쓰(citywaste) 로그인/조회 실패",
+      "description": "citywaste 조회가 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 음쓰 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
     }
   }
 }
