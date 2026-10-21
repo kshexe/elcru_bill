@@ -99,7 +99,10 @@ async def _fetch_current_month_live(
     """selectDischargerQuantityQuickMonthNew.do - 로그인 없이도 태그ID+동+호수만으로
     이번달 1일부터 지금까지의 배출 건별 내역(건마다 kg)을 바로 준다. 이미 설치돼 있던
     oukene/citywaste 컴포넌트가 쓰던 바로 그 API(실측으로 수치 일치 확인됨) - 정산
-    배치가 아직 안 돈 이번달의 실시간 배출량/배출건수를 보여주는 용도."""
+    배치가 아직 안 돈 이번달의 실시간 배출량/배출건수를 보여주는 용도.
+
+    한 페이지가 10건이라 배출이 그보다 많은 달엔 여러 페이지로 나뉜다 - staiji/
+    citywaste_korea(github) 참고해서 totalPageCount만큼 다 돌며 합산한다."""
     today = date.today()
     params = {
         "tagprintcd": tag_id,
@@ -107,21 +110,29 @@ async def _fetch_current_month_live(
         "apthono": ho,
         "startchdate": today.strftime("%Y%m01"),
         "endchdate": today.strftime("%Y%m%d"),
-        "pageIndex": 1,
     }
+    total_kg = 0.0
+    total_count = 0
+    page = 1
+    total_pages = 1
     try:
-        async with session.get(
-            QUICK_MONTH_URL, params=params, headers={"Referer": QUICK_MONTH_REFERER}
-        ) as resp:
-            resp.raise_for_status()
-            data = await resp.json(content_type=None)
+        while page <= total_pages:
+            async with session.get(
+                QUICK_MONTH_URL,
+                params={**params, "pageIndex": page},
+                headers={"Referer": QUICK_MONTH_REFERER},
+            ) as resp:
+                resp.raise_for_status()
+                data = await resp.json(content_type=None)
+            if page == 1:
+                total_count = data.get("totalCnt", 0)
+                total_pages = (data.get("paginationInfo") or {}).get("totalPageCount", 1)
+            for item in data.get("list") or []:
+                total_kg += item.get("qtyvalue", 0)
+            page += 1
     except (aiohttp.ClientError, ValueError):
         return None
-    items = data.get("list") or []
-    return {
-        "discharge_kg": round(sum(item.get("qtyvalue", 0) for item in items), 2),
-        "discharge_count": data.get("totalCnt", len(items)),
-    }
+    return {"discharge_kg": round(total_kg, 2), "discharge_count": total_count}
 
 
 def _month_back(base: date, months_back: int) -> tuple[int, int]:
