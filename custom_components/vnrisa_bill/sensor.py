@@ -129,6 +129,14 @@ def _icon_for_key(key: str) -> str:
 
 
 _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
+# restore_orphaned_sensors가 citywaste 항목을 제외할 때 쓴다 - sync_citywaste_sensors가
+# 만드는 unique_id(f"{entry_id}_{slugify(내부 key)}")와 정확히 같은 접미사라야 하므로,
+# 표시명에서 "(citywaste)" 태그만 떼서 비교하는 방식(이름이 또 바뀌면 깨짐) 대신
+# slugify된 "안정적인 key" 그대로 쓴다.
+_CITYWASTE_UID_SUFFIXES = tuple(
+    f"_{slugify(k)}"
+    for k in ("음식물쓰레기 정산금액", "음식물쓰레기 배출량", "음식물쓰레기 배출건수", "음쓰 kg당 단가")
+)
 _USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
 
@@ -168,11 +176,17 @@ async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry
     남고 history 속성도 안 보인다. 그 항목이 예전에 한 번이라도 있었다는 사실은 엔티티
     레지스트리에 영구히 남아있으니(별도 Store 없이도), 거기 등록된 전부를 훑어서 이번
     조회에 없는 건 값 없는 껍데기로 다시 만들어 RestoreEntity가 recorder에 남은 마지막
-    값/history를 복원할 기회를 준다."""
+    값/history를 복원할 기회를 준다.
+
+    kocom(접두사로 구분)과 citywaste(_CITYWASTE_UID_SUFFIXES로 구분)는 대상에서 뺀다 -
+    둘 다 매번 전체 항목을 다시 채우는 고정 센서들이라(vnrisa 고지서처럼 그 달에
+    어쩌다 빠지는 항목이 없음) "고아"가 될 일이 없고, 여기서 잘못 다루면(이 함수는
+    vnrisa/GSE 2종류 태그만 알아서, "(citywaste)" 태그 붙은 표시명을 못 알아봄)
+    unique_id는 같은데 표시명만 다른 중복 엔티티를 만들려다 "ignoring" 경고만 남긴다."""
     runtime = entry.runtime_data
     registry = er.async_get(hass)
     kocom_prefix = f"{entry.entry_id}_kocom_"
-    skip_suffixes = ("_bill_timestamp", "_gas_timestamp")
+    skip_suffixes = ("_bill_timestamp", "_gas_timestamp", "_citywaste_timestamp") + _CITYWASTE_UID_SUFFIXES
     new_entities = []
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if reg_entry.domain != "sensor" or reg_entry.platform != DOMAIN:
