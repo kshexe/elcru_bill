@@ -45,7 +45,8 @@
         "menu_options": {
           "schedule": "Gas check time",
           "gas_login": "Gas login",
-          "kocom_login": "Kocom Energy login"
+          "kocom_login": "Kocom Energy login",
+          "citywaste_login": "Food waste login"
         }
       },
       "schedule": {
@@ -70,6 +71,14 @@
           "kocom_password": "Kocom password",
           "kocom_update_interval": "Poll interval (seconds)"
         }
+      },
+      "citywaste_login": {
+        "title": "Food waste (citywaste) login",
+        "description": "Login for citywaste.or.kr. The first time this is saved it pulls the last 12 months at once; after that it only refreshes the last 2 months, on the 1st of each month.",
+        "data": {
+          "citywaste_id": "citywaste ID",
+          "citywaste_pwd": "citywaste password"
+        }
       }
     },
     "error": {
@@ -92,6 +101,10 @@
     "kocom_auth_failed": {
       "title": "Kocom Energy authentication failed",
       "description": "Authenticating with the Kocom wall-pad server failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Kocom Energy login. This notification clears automatically once a fetch succeeds."
+    },
+    "citywaste_login_failed": {
+      "title": "Food waste (citywaste) login/fetch failed",
+      "description": "Fetching citywaste data failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Food waste login. This notification clears automatically once a fetch succeeds."
     }
   }
 }

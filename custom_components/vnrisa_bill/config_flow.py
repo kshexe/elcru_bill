@@ -17,6 +17,8 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CITYWASTE_ID,
+    CONF_CITYWASTE_PWD,
     CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
@@ -28,6 +30,7 @@ from .const import (
     DEFAULT_KOCOM_UPDATE_INTERVAL,
     DOMAIN,
 )
+from .citywaste import CitywasteLoginError, fetch_citywaste_history
 from .gas import GasLoginError, fetch_gas_history
 from .kocom_api import KocomAPI
 from .kocom_exceptions import IpAddressNotFoundError
@@ -179,7 +182,7 @@ class VnrisaOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["schedule", "gas_login", "kocom_login"],
+            menu_options=["schedule", "gas_login", "kocom_login", "citywaste_login"],
         )
 
     async def async_step_schedule(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
@@ -306,6 +309,48 @@ class VnrisaOptionsFlow(OptionsFlow):
                         CONF_KOCOM_UPDATE_INTERVAL,
                         default=data.get(CONF_KOCOM_UPDATE_INTERVAL, DEFAULT_KOCOM_UPDATE_INTERVAL),
                     ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                }
+            ),
+            errors=errors,
+        )
+
+    async def async_step_citywaste_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
+        """음식물쓰레기(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
+        여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음)."""
+        errors: dict[str, str] = {}
+        if user_input is not None:
+            member_id = user_input[CONF_CITYWASTE_ID].strip()
+            member_pwd = user_input[CONF_CITYWASTE_PWD]
+            try:
+                await fetch_citywaste_history(member_id, member_pwd, months_back=1)
+            except CitywasteLoginError as err:
+                _LOGGER.warning("음식물쓰레기(citywaste) 로그인 검증 실패: %s", err)
+                errors["base"] = "invalid_auth"
+            except Exception:  # noqa: BLE001
+                _LOGGER.exception("음식물쓰레기(citywaste) 로그인 검증 중 알 수 없는 오류")
+                errors["base"] = "cannot_connect"
+            else:
+                self.hass.config_entries.async_update_entry(
+                    self.config_entry,
+                    data={
+                        **self.config_entry.data,
+                        CONF_CITYWASTE_ID: member_id,
+                        CONF_CITYWASTE_PWD: member_pwd,
+                    },
+                )
+                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+                return self.async_create_entry(data=dict(self.config_entry.options))
+
+        return self.async_show_form(
+            step_id="citywaste_login",
+            data_schema=vol.Schema(
+                {
+                    vol.Required(
+                        CONF_CITYWASTE_ID, default=self.config_entry.data.get(CONF_CITYWASTE_ID, "")
+                    ): str,
+                    vol.Required(CONF_CITYWASTE_PWD): selector.TextSelector(
+                        selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
+                    ),
                 }
             ),
             errors=errors,

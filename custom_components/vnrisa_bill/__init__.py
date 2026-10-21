@@ -27,7 +27,18 @@ from homeassistant.helpers import issue_registry as ir
 from homeassistant.helpers.event import async_track_time_change
 from homeassistant.helpers.storage import Store
 
-from .const import CONF_GAS_CHECK_TIME, CONF_GAS_MEMBER_ID, CONF_GAS_MEMBER_PWD, DEFAULT_GAS_CHECK_TIME, DOMAIN, PLATFORMS
+from .const import (
+    CONF_CITYWASTE_ID,
+    CONF_CITYWASTE_PWD,
+    CONF_GAS_CHECK_TIME,
+    CONF_GAS_MEMBER_ID,
+    CONF_GAS_MEMBER_PWD,
+    DEFAULT_CITYWASTE_CHECK_TIME,
+    DEFAULT_GAS_CHECK_TIME,
+    DOMAIN,
+    PLATFORMS,
+)
+from .citywaste import CitywasteLoginError, fetch_citywaste_history
 from .gas import GasLoginError, fetch_gas_history
 
 _LOGGER = logging.getLogger(__name__)
@@ -59,10 +70,19 @@ class VnrisaRuntimeData:
     gas_sensors: dict[str, Any] = field(default_factory=dict)
     gas_timestamp_sensor: Any = None
 
+    # 음식물쓰레기(citywaste) - 아이디/비밀번호는 entry.data에 저장. backfill_store는
+    # "과거 1년치를 이미 한 번 다 긁었는지"만 기억해서, 매번 12달치를 다시 조회하지
+    # 않고 그 뒤로는 최근 2달만 가볍게 갱신한다.
+    citywaste_error: str | None = None
+    citywaste_sensors: dict[str, Any] = field(default_factory=dict)
+    citywaste_timestamp_sensor: Any = None
+    citywaste_backfill_store: Store | None = None
+
 
 async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bool:
     runtime = VnrisaRuntimeData()
     runtime.url_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_bill_url")
+    runtime.citywaste_backfill_store = Store(hass, 1, f"{DOMAIN}_{entry.entry_id}_citywaste_backfill")
     entry.runtime_data = runtime
 
     await hass.config_entries.async_forward_entry_setups(entry, PLATFORMS)
@@ -72,6 +92,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         await async_refresh_bill(hass, entry, stored_url)
 
     await async_refresh_gas(hass, entry)  # 설치/재시작 직후 바로 한 번 조회
+    await async_refresh_citywaste(hass, entry)  # 설치/재시작 직후 바로 한 번 조회(1회성 백필 포함)
 
     from .sensor import restore_orphaned_sensors  # 순환 임포트 방지용 지연 임포트
 
@@ -88,6 +109,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
 
     entry.async_on_unload(
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
+    )
+
+    citywaste_hour, citywaste_minute = (int(x) for x in DEFAULT_CITYWASTE_CHECK_TIME.split(":"))
+
+    async def _citywaste_scheduled(now) -> None:
+        # citywaste는 한 번 완료된 달 정산내역이 그 뒤로 안 바뀌어서 매일 다시 긁을
+        # 이유가 없다 - 매달 1일에만 확인한다.
+        if now.day == 1:
+            await async_refresh_citywaste(hass, entry)
+
+    entry.async_on_unload(
+        async_track_time_change(
+            hass, _citywaste_scheduled, hour=citywaste_hour, minute=citywaste_minute, second=0
+        )
     )
     entry.async_on_unload(entry.add_update_listener(_reload))
 
@@ -168,6 +203,47 @@ async def async_refresh_gas(hass: HomeAssistant, entry: VnrisaConfigEntry) -> No
     ir.async_delete_issue(hass, DOMAIN, issue_id)
     if runtime.gas_timestamp_sensor is not None:
         runtime.gas_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+
+
+async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
+    """entry.data에 저장된 아이디/비밀번호로 로그인해서 음식물쓰레기 정산내역을
+    조회해 센서에 반영한다. GSE처럼 한 번에 전체 기간을 안 주고 달마다 따로 요청해야
+    해서, 처음 한 번만 1년치를 긁고(backfill_store에 기록) 그 뒤로는 최근 2달만
+    가볍게 갱신한다."""
+    from .sensor import sync_citywaste_sensors  # 순환 임포트 방지용 지연 임포트
+
+    runtime = entry.runtime_data
+    issue_id = f"{entry.entry_id}_citywaste_login_failed"
+    member_id = entry.data.get(CONF_CITYWASTE_ID)
+    member_pwd = entry.data.get(CONF_CITYWASTE_PWD)
+    if not member_id or not member_pwd:
+        return
+
+    backfilled = False
+    if runtime.citywaste_backfill_store is not None:
+        backfilled = bool((await runtime.citywaste_backfill_store.async_load() or {}).get("done"))
+    months_back = 2 if backfilled else 12
+
+    try:
+        rows = await fetch_citywaste_history(member_id, member_pwd, months_back=months_back)
+    except CitywasteLoginError as err:
+        _LOGGER.warning("음식물쓰레기(citywaste) 로그인/조회 실패: %s", err)
+        runtime.citywaste_error = str(err)
+        _create_fetch_issue(hass, issue_id, "citywaste_login_failed", str(err))
+        return
+    except (aiohttp.ClientError, TimeoutError) as err:
+        _LOGGER.warning("음식물쓰레기(citywaste) 조회 중 통신 오류: %s", err)
+        runtime.citywaste_error = f"조회 실패: {err}"
+        _create_fetch_issue(hass, issue_id, "citywaste_login_failed", str(err))
+        return
+
+    runtime.citywaste_error = None
+    sync_citywaste_sensors(entry, rows)
+    ir.async_delete_issue(hass, DOMAIN, issue_id)
+    if not backfilled and runtime.citywaste_backfill_store is not None:
+        await runtime.citywaste_backfill_store.async_save({"done": True})
+    if runtime.citywaste_timestamp_sensor is not None:
+        runtime.citywaste_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 
 
 def _create_fetch_issue(hass: HomeAssistant, issue_id: str, translation_key: str, error: str) -> None:

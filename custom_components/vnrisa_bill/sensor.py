@@ -56,7 +56,12 @@ async def async_setup_entry(
 
     runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각 (vnrisa)", "bill_timestamp")
     runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각 (GSE)", "gas_timestamp")
-    async_add_entities([runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor])
+    runtime.citywaste_timestamp_sensor = VnrisaTimestampSensor(
+        entry, "음식물쓰레기 조회시각 (citywaste)", "citywaste_timestamp"
+    )
+    async_add_entities(
+        [runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor, runtime.citywaste_timestamp_sensor]
+    )
 
     await async_setup_kocom_entry(hass, entry, async_add_entities)
 
@@ -231,6 +236,45 @@ def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> No
             if existing is None:
                 sensor = VnrisaItemSensor(entry, key, item, month)
                 runtime.gas_sensors[key] = sensor
+                new_entities.append(sensor)
+            else:
+                existing.set_value(item, month)
+    if new_entities and runtime.add_sensor_entities is not None:
+        runtime.add_sensor_entities(new_entities)
+
+
+def sync_citywaste_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> None:
+    """citywaste.py의 fetch_citywaste_history(음식물쓰레기 RFID 종량기 - 여러 달치) 결과를
+    정산금액/배출량/배출건수 센서에 반영. gas_sensors와 같은 패턴, 별도 dict로 관리."""
+    runtime = entry.runtime_data
+    new_entities = []
+    for row in rows:
+        month = row.get("month")
+        items = {
+            "음식물쓰레기 정산금액": {
+                "display_name": "음식물쓰레기 정산금액 (citywaste)",
+                "value": row.get("final_amount"),
+                "unit": "원",
+                "attrs": {},
+            },
+            "음식물쓰레기 배출량": {
+                "display_name": "음식물쓰레기 배출량 (citywaste)",
+                "value": row.get("discharge_kg"),
+                "unit": "kg",
+                "attrs": {},
+            },
+            "음식물쓰레기 배출건수": {
+                "display_name": "음식물쓰레기 배출건수 (citywaste)",
+                "value": row.get("discharge_count"),
+                "unit": "회",
+                "attrs": {},
+            },
+        }
+        for key, item in items.items():
+            existing = runtime.citywaste_sensors.get(key)
+            if existing is None:
+                sensor = VnrisaItemSensor(entry, key, item, month)
+                runtime.citywaste_sensors[key] = sensor
                 new_entities.append(sensor)
             else:
                 existing.set_value(item, month)
