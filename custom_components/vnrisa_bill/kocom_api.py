@@ -141,7 +141,7 @@ class KocomAPI:
                 menu_response = (await asyncio.wait_for(reader.read(1024), timeout=10.0)).hex()
                 _LOGGER.debug(f'메뉴 정보 응답 패킷: {menu_response}')
                 self.energy_disp_type = menu_response[96:100]
-                _LOGGER.debug(f'에너지 조회 유형 : {self.energy_disp_type}')
+                _LOGGER.error(f'[진단] 에너지 조회 유형 : {self.energy_disp_type} (메뉴 응답 길이: {len(menu_response)})')
             except asyncio.TimeoutError:
                 _LOGGER.error("메뉴 조회 timeout")
                 return {}
