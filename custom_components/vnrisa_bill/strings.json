@@ -74,7 +74,7 @@
       },
       "citywaste_login": {
         "title": "음쓰(citywaste) 로그인",
-        "description": "citywaste.or.kr 로그인 정보입니다. 처음 입력하면 최근 1년치를 한 번에 가져오고, 그 뒤로는 매달 1일에 최근 2개월만 갱신합니다.",
+        "description": "citywaste.or.kr 로그인 정보입니다. 설치 후 한 번도 조회 성공한 적이 없으면 최근 1년치를 한 번에 가져오고(이미 가져왔으면 비밀번호를 다시 입력해도 다시 긁지 않습니다), 그 뒤로는 매달 1일에 지난 달 1개월 + 이번 달 실시간만 갱신합니다.",
         "data": {
           "citywaste_id": "citywaste 아이디",
           "citywaste_pwd": "citywaste 비밀번호"

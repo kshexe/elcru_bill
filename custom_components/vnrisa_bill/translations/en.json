@@ -74,7 +74,7 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Login for citywaste.or.kr. The first time this is saved it pulls the last 12 months at once; after that it only refreshes the last 2 months, on the 1st of each month.",
+        "description": "Login for citywaste.or.kr. The very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month plus this month's live total, on the 1st of each month.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password"
