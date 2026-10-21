@@ -156,28 +156,28 @@ SENSOR_TYPES = {
         # 값이 "2026-10-19 19:41:00" 같은 문자열이라 state_class를 주면 HA가 숫자형이
         # 아니라고 엔티티 추가 자체를 거부한다(최신 HA에서 강화된 검증) - 원본
         # kocom_energy에 있던 state_class: measurement를 빼서 고쳤다.
-        "name": "코콤 에너지 조회시각",
+        "name": "코콤 에너지 조회시각 (kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "",
         "icon": "mdi:api",
     },
     "electricity": {
-        "name": "전기 사용량",
+        "name": "전기 사용량 (kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
         "icon": "mdi:flash",
     },
     "gas": {
-        "name": "가스 사용량",
+        "name": "가스 사용량 (kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
         "icon": "mdi:fire",
     },
     "water": {
-        "name": "수도 사용량",
+        "name": "수도 사용량 (kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
@@ -190,8 +190,8 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom energy 제조",
-        "model": "관리비·가스·코콤 관리비",
+        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste",
+        "model": "관리비·가스·코콤·음쓰",
     }
 
 
@@ -444,7 +444,7 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
         self._source = source
         self._kind = kind
         label = _HISTORY_KIND_LABELS[kind]
-        self._attr_name = f"{_HISTORY_KOCOM_LABELS[sensor_type]} {label}"
+        self._attr_name = f"{_HISTORY_KOCOM_LABELS[sensor_type]} {label} (kocom)"
         self._attr_unique_id = f"{entry.entry_id}_kocom_{sensor_type}_{kind}"
         self._attr_native_unit_of_measurement = source._attr_native_unit_of_measurement
         self._attr_icon = source._attr_icon

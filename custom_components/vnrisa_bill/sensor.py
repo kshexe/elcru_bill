@@ -43,8 +43,8 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste 제조",
-        "model": "관리비·가스·코콤 관리비·음쓰",
+        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste",
+        "model": "관리비·가스·코콤·음쓰",
     }
 
 
@@ -293,7 +293,7 @@ def sync_citywaste_sensors(
 
     if unit_price is not None:
         key = "음쓰 kg당 단가"
-        item = {"display_name": "음쓰 kg당 단가 (citywaste)", "value": unit_price, "unit": "원/kg", "attrs": {}}
+        item = {"display_name": "음쓰 단가 (citywaste)", "value": unit_price, "unit": "원/kg", "attrs": {}}
         existing = runtime.citywaste_sensors.get(key)
         if existing is None:
             sensor = VnrisaItemSensor(entry, key, item, None)
