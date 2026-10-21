@@ -106,7 +106,7 @@ SENSOR_TYPES = {
         # 값이 "2026-10-19 19:41:00" 같은 문자열이라 state_class를 주면 HA가 숫자형이
         # 아니라고 엔티티 추가 자체를 거부한다(최신 HA에서 강화된 검증) - 원본
         # kocom_energy에 있던 state_class: measurement를 빼서 고쳤다.
-        "name": "코콤 에너지 조회시각 (kocom)",
+        "name": "코콤 조회시각 (kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "",
@@ -140,7 +140,7 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste",
+        "manufacturer": "vnrisa / GSE / Kocom / citywaste",
         "model": "관리비·가스·코콤·음쓰",
     }
 

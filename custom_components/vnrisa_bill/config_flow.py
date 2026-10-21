@@ -184,7 +184,7 @@ class VnrisaOptionsFlow(OptionsFlow):
     async def async_step_init(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         return self.async_show_menu(
             step_id="init",
-            menu_options=["bill_info", "gas_login", "kocom_login", "citywaste_login"],
+            menu_options=["bill_info", "gas_login", "citywaste_login", "kocom_login"],
         )
 
     async def async_step_bill_info(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:

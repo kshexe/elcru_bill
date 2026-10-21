@@ -43,7 +43,7 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom energy / citywaste",
+        "manufacturer": "vnrisa / GSE / Kocom / citywaste",
         "model": "관리비·가스·코콤·음쓰",
     }
 
@@ -342,7 +342,7 @@ def sync_citywaste_sensors(
 
 
 class VnrisaTimestampSensor(RestoreEntity, SensorEntity):
-    """코콤의 '코콤 에너지 조회시각'처럼, vnrisa 관리비/GSE 가스도 마지막으로 성공한
+    """코콤의 '코콤 조회시각'처럼, vnrisa 관리비/GSE 가스도 마지막으로 성공한
     조회시각을 볼 수 있게 - 조회가 조용히 하루 종일 실패하고 있어도 바로 알아챌 수
     있다."""
 

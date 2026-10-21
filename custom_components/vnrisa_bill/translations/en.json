@@ -10,14 +10,14 @@
         }
       },
       "kocom_user": {
-        "title": "Elkeuru Management Fee - Kocom Energy",
+        "title": "Elkeuru Management Fee - Kocom",
         "description": "Enter your Kocom ID to auto-discover the complex's wall-pad server address.",
         "data": {
           "kocom_username": "Kocom ID"
         }
       },
       "kocom_account": {
-        "title": "Elkeuru Management Fee - Kocom Energy login",
+        "title": "Elkeuru Management Fee - Kocom login",
         "description": "The server address was filled in automatically. Enter your password.",
         "data": {
           "kocom_ip": "Wall-pad server IP",
@@ -45,8 +45,8 @@
         "menu_options": {
           "bill_info": "Bill settings",
           "gas_login": "Gas settings",
-          "kocom_login": "Kocom Energy settings",
-          "citywaste_login": "Food waste settings"
+          "citywaste_login": "Food waste settings",
+          "kocom_login": "Kocom settings"
         }
       },
       "bill_info": {
@@ -63,7 +63,7 @@
         }
       },
       "kocom_login": {
-        "title": "Kocom Energy login",
+        "title": "Kocom login",
         "description": "Re-enter this if your Kocom password changed - the server address will be looked up again and re-verified on save.",
         "data": {
           "kocom_username": "Kocom ID",
@@ -99,8 +99,8 @@
       "description": "Fetching the gas history failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Gas login. This notification clears automatically once a fetch succeeds."
     },
     "kocom_auth_failed": {
-      "title": "Kocom Energy authentication failed",
-      "description": "Authenticating with the Kocom wall-pad server failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Kocom Energy login. This notification clears automatically once a fetch succeeds."
+      "title": "Kocom authentication failed",
+      "description": "Authenticating with the Kocom wall-pad server failed: {error}\n\nIf your password changed, re-enter it under Settings → Options → Kocom login. This notification clears automatically once a fetch succeeds."
     },
     "citywaste_login_failed": {
       "title": "Food waste (citywaste) login/fetch failed",

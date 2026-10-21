@@ -10,14 +10,14 @@
         }
       },
       "kocom_user": {
-        "title": "엘크루 관리비 - 코콤 에너지",
+        "title": "엘크루 관리비 - 코콤",
         "description": "코콤 아이디를 입력하면 단지 월패드 서버 주소를 자동으로 찾습니다.",
         "data": {
           "kocom_username": "코콤 아이디"
         }
       },
       "kocom_account": {
-        "title": "엘크루 관리비 - 코콤 에너지 로그인",
+        "title": "엘크루 관리비 - 코콤 로그인",
         "description": "서버 주소가 자동으로 채워졌습니다. 비밀번호를 입력하세요.",
         "data": {
           "kocom_ip": "월패드 서버 IP",
@@ -45,8 +45,8 @@
         "menu_options": {
           "bill_info": "관리비 설정",
           "gas_login": "도시가스 설정",
-          "kocom_login": "코콤 에너지 설정",
-          "citywaste_login": "음쓰 설정"
+          "citywaste_login": "음쓰 설정",
+          "kocom_login": "코콤 설정"
         }
       },
       "bill_info": {
@@ -63,7 +63,7 @@
         }
       },
       "kocom_login": {
-        "title": "코콤 에너지 로그인",
+        "title": "코콤 로그인",
         "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 서버 주소를 자동으로 다시 찾아 인증 검증까지 다시 합니다.",
         "data": {
           "kocom_username": "코콤 아이디",
@@ -99,8 +99,8 @@
       "description": "도시가스 조회가 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 도시가스 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
     },
     "kocom_auth_failed": {
-      "title": "코콤 에너지 인증 실패",
-      "description": "코콤 월패드 서버 인증이 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 코콤 에너지 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
+      "title": "코콤 인증 실패",
+      "description": "코콤 월패드 서버 인증이 실패했습니다: {error}\n\n비밀번호가 바뀌었다면 설정 → 옵션 → 코콤 로그인에서 다시 입력하세요. 다음 조회가 성공하면 이 알림은 자동으로 사라집니다."
     },
     "citywaste_login_failed": {
       "title": "음쓰(citywaste) 로그인/조회 실패",
