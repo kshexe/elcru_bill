@@ -155,7 +155,7 @@ async def async_setup_kocom_entry(
     update_interval = entry.data.get(CONF_KOCOM_UPDATE_INTERVAL)
     issue_id = f"{entry.entry_id}_kocom_auth_failed"
 
-    async def async_update_kocom_energy():
+    async def async_update_kocom():
         _LOGGER.info("==================== 코콤 센서 업데이트 시작 ====================")
         try:
             api = KocomAPI(
@@ -188,15 +188,15 @@ async def async_setup_kocom_entry(
     coordinator = DataUpdateCoordinator(
         hass,
         _LOGGER,
-        name="kocom_energy",
-        update_method=async_update_kocom_energy,
+        name="kocom",
+        update_method=async_update_kocom,
         update_interval=timedelta(seconds=update_interval) if update_interval else None,
     )
 
     await coordinator.async_config_entry_first_refresh()
 
     main_sensors = {
-        sensor_type: KocomEnergySensor(coordinator, entry, sensor_type, sensor_data)
+        sensor_type: KocomSensor(coordinator, entry, sensor_type, sensor_data)
         for sensor_type, sensor_data in SENSOR_TYPES.items()
     }
     history_sensors = [
@@ -207,8 +207,8 @@ async def async_setup_kocom_entry(
     async_add_entities([*main_sensors.values(), *history_sensors])
 
 
-class KocomEnergySensor(CoordinatorEntity, RestoreEntity, SensorEntity):
-    """원본 KocomEnergySensor와 동일한 로직 - device_info만 공용 기기로 변경하고,
+class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
+    """kshexe/kocom_energy의 센서 클래스와 동일한 로직 - device_info만 공용 기기로 변경하고,
     전기/가스/수도 사용량엔 월별 history(+전월/작년 속성)를 추가했다."""
 
     _attr_has_entity_name = True
@@ -355,9 +355,9 @@ _HISTORY_KOCOM_LABELS = {"electricity": "전기", "gas": "가스", "water": "수
 
 
 class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
-    """KocomEnergySensor가 들고 있는 history에서 전월/작년 값만 뽑아 독립된 센서로
+    """KocomSensor가 들고 있는 history에서 전월/작년 값만 뽑아 독립된 센서로
     노출한다 - 속성이 아니라 대시보드/그래프/자동화에서 바로 쓸 수 있게 하기 위함.
-    값 자체는 source(=그 타입의 KocomEnergySensor)가 이미 쌓아둔 history를 그대로
+    값 자체는 source(=그 타입의 KocomSensor)가 이미 쌓아둔 history를 그대로
     읽기만 하므로, 별도 폴링이나 자체 상태 저장이 필요 없다.
 
     전기/가스/수도 사용량(현재사용량) 3개와 같은 레벨의 "센서"로 바로 보이게 - 진단
@@ -366,7 +366,7 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
     _attr_has_entity_name = True
 
     def __init__(
-        self, coordinator, source: "KocomEnergySensor", entry: ConfigEntry, sensor_type: str, kind: str
+        self, coordinator, source: "KocomSensor", entry: ConfigEntry, sensor_type: str, kind: str
     ) -> None:
         super().__init__(coordinator)
         self._source = source

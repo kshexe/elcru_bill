@@ -11,7 +11,7 @@ Token이 정확히 일치해야 하고(실측 확인됨, 2026-10-19), 그 Token�
 parkingweb/myhome_parking과 같은 패턴으로, 로그인 정보는 config flow(최초 설정)에서
 한 번 입력받아 저장하고, 조회 주기는 Options flow에서 바꿀 수 있게 한다.
 
-코콤 에너지(kocom_energy, kshexe 포크)도 같은 이유로 합쳤다 - 아파트 단지 월패드에
+코콤(kocom_energy, kshexe 포크)도 같은 이유로 합쳤다 - 아파트 단지 월패드에
 직접 붙는 로컬 소켓 통신이라 Token도 없고, 전기/가스/수도 사용량을 따로 보여주던
 센서를 하나의 통합(기기)으로 모아서 관리하기 위함. 소켓 프로토콜 자체(kocom_api.py/
 kocom_util.py)는 원본 그대로 포팅 - 바이트 오프라인 파싱 로직이라 손대지 않았다.
