@@ -28,7 +28,6 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 
 from .const import (
-    CONF_CITYWASTE_CHECK_TIME,
     CONF_CITYWASTE_DONG,
     CONF_CITYWASTE_HO,
     CONF_CITYWASTE_ID,
@@ -141,8 +140,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         async_track_time_change(hass, _gas_diagnostic_scheduled, minute=0, second=0)
     )
 
-    citywaste_check_time = entry.options.get(CONF_CITYWASTE_CHECK_TIME, DEFAULT_CITYWASTE_CHECK_TIME)
-    citywaste_hour, citywaste_minute = (int(x) for x in citywaste_check_time.split(":"))
+    citywaste_hour, citywaste_minute = (int(x) for x in DEFAULT_CITYWASTE_CHECK_TIME.split(":"))
 
     async def _citywaste_scheduled(now) -> None:
         # citywaste는 한 번 완료된 달 정산내역이 그 뒤로 안 바뀌어서 매일 다시 긁을
