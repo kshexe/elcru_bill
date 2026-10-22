@@ -46,11 +46,11 @@
       },
       "gas_login": {
         "title": "도시가스 설정",
-        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다. 매일 조회 시각도 여기서 바꿀 수 있습니다.",
+        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다. 매달 1일 확인시각도 여기서 바꿀 수 있습니다.",
         "data": {
           "gas_member_id": "도시가스 아이디",
           "gas_member_pwd": "도시가스 비밀번호",
-          "gas_check_time": "매일 확인시각 (HH:MM)"
+          "gas_check_time": "확인시각 (매달 1일, HH:MM, 기본 09:00)"
         }
       },
       "kocom_login": {
@@ -59,7 +59,7 @@
         "data": {
           "kocom_username": "코콤 아이디",
           "kocom_password": "코콤 비밀번호",
-          "kocom_update_interval": "실시간 조회주기 (초)"
+          "kocom_update_interval": "실시간 조회주기 (초, 기본 1800, 0 = 사용안함)"
         }
       },
       "citywaste_login": {
@@ -71,8 +71,8 @@
           "citywaste_tag_id": "태그인쇄번호",
           "citywaste_dong": "동",
           "citywaste_ho": "호",
-          "citywaste_refresh_interval": "실시간 조회주기 (초)",
-          "citywaste_check_time": "확인시각 (매달 1일, HH:MM)"
+          "citywaste_refresh_interval": "실시간 조회주기 (초, 기본 1800, 0 = 사용안함)",
+          "citywaste_check_time": "확인시각 (매달 1일, HH:MM, 기본 09:00)"
         }
       }
     },

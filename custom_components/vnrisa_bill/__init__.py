@@ -115,16 +115,20 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     check_time = entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
     hour, minute = (int(x) for x in check_time.split(":"))
 
-    async def _gas_scheduled(_now) -> None:
-        await async_refresh_gas(hass, entry)
+    async def _gas_scheduled(now) -> None:
+        # citywaste(_citywaste_scheduled)와 같은 이유로 매일이 아니라 매달 1일에만
+        # 확인한다 - GSE도 한 번 완료된 "지난달" 고지/수납내역은 그 뒤로 안 바뀐다.
+        if now.day == 1:
+            await async_refresh_gas(hass, entry)
 
     entry.async_on_unload(
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
     )
 
     # 임시 진단(11월 1일만) - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서,
-    # 그날 하루만 매시간 조회해서 로그로 남긴다. citywaste처럼 "매일"이 아니라 "매달
-    # 1회, 정확한 시각"으로 바꿀 근거를 만들기 위한 일회성 관찰용 - 확인되면 지운다.
+    # 그날 하루만 매시간 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일
+    # 고정 확인시각으로 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이
+    # 진단으로 확인 중이다 - 확인되면 지운다.
     async def _gas_diagnostic_scheduled(now) -> None:
         if now.day != 1:
             return
