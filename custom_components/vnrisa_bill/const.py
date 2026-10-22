@@ -32,6 +32,7 @@ DEFAULT_GAS_CHECK_TIME = "09:00"
 
 CONF_CITYWASTE_ID = "citywaste_id"
 CONF_CITYWASTE_PWD = "citywaste_pwd"
+CONF_CITYWASTE_CHECK_TIME = "citywaste_check_time"
 DEFAULT_CITYWASTE_CHECK_TIME = "09:00"
 
 # 정산내역(월 1회, 위 CHECK_TIME)과 분리된 실시간 조회(로그인 없는 API) 전용 주기 -
