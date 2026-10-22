@@ -64,13 +64,15 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nThe live check interval is fixed at 1800s (30 min) and can't be changed here.\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
+        "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nLast month's settlement is re-fetched at the check time (HH:MM, default 09:00) on the 1st of each month (+ on HA restart).\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password",
           "citywaste_tag_id": "Tag print code",
           "citywaste_dong": "Building/dong",
-          "citywaste_ho": "Unit/ho"
+          "citywaste_ho": "Unit/ho",
+          "citywaste_refresh_interval": "Live check interval (seconds)",
+          "citywaste_check_time": "Check time (1st of month, HH:MM)"
         }
       }
     },

@@ -16,6 +16,7 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CITYWASTE_CHECK_TIME,
     CONF_CITYWASTE_DONG,
     CONF_CITYWASTE_HO,
     CONF_CITYWASTE_ID,
@@ -29,6 +30,7 @@ from .const import (
     CONF_KOCOM_PASSWORD,
     CONF_KOCOM_UPDATE_INTERVAL,
     CONF_KOCOM_USERNAME,
+    DEFAULT_CITYWASTE_CHECK_TIME,
     DEFAULT_CITYWASTE_REFRESH_INTERVAL,
     DEFAULT_GAS_CHECK_TIME,
     DEFAULT_KOCOM_UPDATE_INTERVAL,
@@ -314,41 +316,58 @@ class VnrisaOptionsFlow(OptionsFlow):
 
         아이디/비밀번호와 똑같이, 태그인쇄번호/동/호도 전부 사용자가 직접 입력하는
         필수값이다 - 자동 추출/자동 채움 같은 건 없고, 여기서 입력받은 값을 그대로
-        저장해서 그 값만 쓴다(__init__.py의 async_refresh_citywaste). 조회주기는
-        여기서 묻지 않고 기본값(DEFAULT_CITYWASTE_REFRESH_INTERVAL)을 그대로 쓴다."""
+        저장해서 그 값만 쓴다(__init__.py의 async_refresh_citywaste). 실시간 조회주기는
+        코콤의 async_step_kocom_login과 같은 패턴으로 여기서 바꿀 수 있게 둔다 -
+        citywaste는 코콤과 달리 "최초 설정"과 "옵션"이 분리돼 있지 않고 이 화면이
+        유일한 설정 지점이라, 여기서 빼면 조회주기를 조정할 곳이 아예 없어진다.
+
+        지난달 정산내역 확인시각(매달 1일 HH:MM)도 가스(async_step_gas_login의
+        CONF_GAS_CHECK_TIME)와 같은 패턴으로 여기서 바꿀 수 있다 - entry.data가 아니라
+        entry.options에 저장한다(가스와 동일하게, 로그인 정보가 아니라 스케줄이라서)."""
         errors: dict[str, str] = {}
         data = self.config_entry.data
+        current_check_time = self.config_entry.options.get(
+            CONF_CITYWASTE_CHECK_TIME, DEFAULT_CITYWASTE_CHECK_TIME
+        )
         if user_input is not None:
             member_id = user_input[CONF_CITYWASTE_ID].strip()
             member_pwd = user_input[CONF_CITYWASTE_PWD]
             tag_id = user_input[CONF_CITYWASTE_TAG_ID].strip()
             dong = user_input[CONF_CITYWASTE_DONG].strip()
             ho = user_input[CONF_CITYWASTE_HO].strip()
-            try:
-                await fetch_citywaste_history(member_id, member_pwd, months_back=1)
-            except CitywasteLoginError as err:
-                _LOGGER.warning("음쓰(citywaste) 로그인 검증 실패: %s", err)
-                errors["base"] = "invalid_auth"
-            except Exception:  # noqa: BLE001
-                _LOGGER.exception("음쓰(citywaste) 로그인 검증 중 알 수 없는 오류")
-                errors["base"] = "cannot_connect"
+            refresh_interval = user_input[CONF_CITYWASTE_REFRESH_INTERVAL]
+            check_time = user_input[CONF_CITYWASTE_CHECK_TIME].strip()
+            if not _TIME_RE.match(check_time):
+                errors[CONF_CITYWASTE_CHECK_TIME] = "invalid_time"
             else:
-                self.hass.config_entries.async_update_entry(
-                    self.config_entry,
-                    data={
-                        **self.config_entry.data,
-                        CONF_CITYWASTE_ID: member_id,
-                        CONF_CITYWASTE_PWD: member_pwd,
-                        CONF_CITYWASTE_REFRESH_INTERVAL: data.get(
-                            CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL
-                        ),
-                        CONF_CITYWASTE_TAG_ID: tag_id,
-                        CONF_CITYWASTE_DONG: dong,
-                        CONF_CITYWASTE_HO: ho,
-                    },
-                )
-                self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
-                return self.async_create_entry(data=dict(self.config_entry.options))
+                try:
+                    await fetch_citywaste_history(member_id, member_pwd, months_back=1)
+                except CitywasteLoginError as err:
+                    _LOGGER.warning("음쓰(citywaste) 로그인 검증 실패: %s", err)
+                    errors["base"] = "invalid_auth"
+                except Exception:  # noqa: BLE001
+                    _LOGGER.exception("음쓰(citywaste) 로그인 검증 중 알 수 없는 오류")
+                    errors["base"] = "cannot_connect"
+                else:
+                    self.hass.config_entries.async_update_entry(
+                        self.config_entry,
+                        data={
+                            **self.config_entry.data,
+                            CONF_CITYWASTE_ID: member_id,
+                            CONF_CITYWASTE_PWD: member_pwd,
+                            CONF_CITYWASTE_REFRESH_INTERVAL: refresh_interval,
+                            CONF_CITYWASTE_TAG_ID: tag_id,
+                            CONF_CITYWASTE_DONG: dong,
+                            CONF_CITYWASTE_HO: ho,
+                        },
+                    )
+                    # IP/비밀번호는 다음 폴링 때 entry.data를 다시 읽어 바로 반영되지만,
+                    # 조회 주기/확인시각은 스케줄러 생성 시 한 번만 읽혀서 reload 없인
+                    # 다음 재시작 전까지 안 바뀐다(async_step_kocom_login과 동일) - 명시적으로 reload.
+                    self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
+                    return self.async_create_entry(
+                        data={**self.config_entry.options, CONF_CITYWASTE_CHECK_TIME: check_time}
+                    )
 
         return self.async_show_form(
             step_id="citywaste_login",
@@ -369,6 +388,11 @@ class VnrisaOptionsFlow(OptionsFlow):
                     vol.Required(
                         CONF_CITYWASTE_HO, default=data.get(CONF_CITYWASTE_HO, "")
                     ): str,
+                    vol.Required(
+                        CONF_CITYWASTE_REFRESH_INTERVAL,
+                        default=data.get(CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL),
+                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                    vol.Required(CONF_CITYWASTE_CHECK_TIME, default=current_check_time): str,
                 }
             ),
             errors=errors,
