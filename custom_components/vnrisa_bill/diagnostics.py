@@ -20,6 +20,9 @@ TO_REDACT = {
     "kocom_ip",
     "citywaste_id",
     "citywaste_pwd",
+    "citywaste_tag_id",
+    "citywaste_dong",
+    "citywaste_ho",
 }
 
 

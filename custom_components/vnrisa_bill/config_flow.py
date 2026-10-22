@@ -16,9 +16,12 @@ from homeassistant.core import callback
 from homeassistant.helpers import selector
 
 from .const import (
+    CONF_CITYWASTE_DONG,
+    CONF_CITYWASTE_HO,
     CONF_CITYWASTE_ID,
     CONF_CITYWASTE_PWD,
     CONF_CITYWASTE_REFRESH_INTERVAL,
+    CONF_CITYWASTE_TAG_ID,
     CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
@@ -314,6 +317,9 @@ class VnrisaOptionsFlow(OptionsFlow):
             member_id = user_input[CONF_CITYWASTE_ID].strip()
             member_pwd = user_input[CONF_CITYWASTE_PWD]
             refresh_interval = user_input[CONF_CITYWASTE_REFRESH_INTERVAL]
+            tag_id = user_input.get(CONF_CITYWASTE_TAG_ID, "").strip()
+            dong = user_input.get(CONF_CITYWASTE_DONG, "").strip()
+            ho = user_input.get(CONF_CITYWASTE_HO, "").strip()
             try:
                 await fetch_citywaste_history(member_id, member_pwd, months_back=1)
             except CitywasteLoginError as err:
@@ -330,6 +336,9 @@ class VnrisaOptionsFlow(OptionsFlow):
                         CONF_CITYWASTE_ID: member_id,
                         CONF_CITYWASTE_PWD: member_pwd,
                         CONF_CITYWASTE_REFRESH_INTERVAL: refresh_interval,
+                        CONF_CITYWASTE_TAG_ID: tag_id,
+                        CONF_CITYWASTE_DONG: dong,
+                        CONF_CITYWASTE_HO: ho,
                     },
                 )
                 self.hass.config_entries.async_schedule_reload(self.config_entry.entry_id)
@@ -349,6 +358,15 @@ class VnrisaOptionsFlow(OptionsFlow):
                         CONF_CITYWASTE_REFRESH_INTERVAL,
                         default=data.get(CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL),
                     ): vol.All(vol.Coerce(int), vol.Range(min=0)),
+                    vol.Optional(
+                        CONF_CITYWASTE_TAG_ID, default=data.get(CONF_CITYWASTE_TAG_ID, "")
+                    ): str,
+                    vol.Optional(
+                        CONF_CITYWASTE_DONG, default=data.get(CONF_CITYWASTE_DONG, "")
+                    ): str,
+                    vol.Optional(
+                        CONF_CITYWASTE_HO, default=data.get(CONF_CITYWASTE_HO, "")
+                    ): str,
                 }
             ),
             errors=errors,

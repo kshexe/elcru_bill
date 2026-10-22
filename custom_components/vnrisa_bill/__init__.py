@@ -28,9 +28,12 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 
 from .const import (
+    CONF_CITYWASTE_DONG,
+    CONF_CITYWASTE_HO,
     CONF_CITYWASTE_ID,
     CONF_CITYWASTE_PWD,
     CONF_CITYWASTE_REFRESH_INTERVAL,
+    CONF_CITYWASTE_TAG_ID,
     CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
@@ -306,6 +309,11 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     ir.async_delete_issue(hass, DOMAIN, issue_id)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})
+    # 설정에서 수동으로 입력해둔 값이 있으면 그걸 우선한다(자동 추출이 깨졌을 때를
+    # 위한 수동 지정/대체용) - 없으면 로그인+정산내역 페이지에서 자동으로 뽑은 값을 씀.
+    tag_id = entry.data.get(CONF_CITYWASTE_TAG_ID) or tag_id
+    dong = entry.data.get(CONF_CITYWASTE_DONG) or dong
+    ho = entry.data.get(CONF_CITYWASTE_HO) or ho
     if tag_id and dong and ho:
         runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho = tag_id, dong, ho
     if runtime.citywaste_timestamp_sensor is not None:

@@ -46,3 +46,11 @@ DEFAULT_CITYWASTE_CHECK_TIME = "00:00"
 # 넘긴 버그로 보임 - staiji 쪽처럼 30분을 정상값으로 봄).
 CONF_CITYWASTE_REFRESH_INTERVAL = "citywaste_refresh_interval"
 DEFAULT_CITYWASTE_REFRESH_INTERVAL = 1800
+
+# 실시간 조회(로그인 없는 API)에 필요한 태그인쇄번호/동/호 - 평소엔 로그인 응답과
+# 정산내역 페이지에서 자동으로 뽑아와서 따로 입력받을 필요가 없지만, 그 자동 추출이
+# 뭔가 바뀌어서 실패할 때를 위해 수동으로 직접 넣을 수 있게 옵션에도 둔다(비워두면
+# 자동 추출값을 그대로 씀).
+CONF_CITYWASTE_TAG_ID = "citywaste_tag_id"
+CONF_CITYWASTE_DONG = "citywaste_dong"
+CONF_CITYWASTE_HO = "citywaste_ho"

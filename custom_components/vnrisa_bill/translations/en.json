@@ -65,11 +65,14 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Login for citywaste.or.kr.\n\nLive check interval: refreshes just this month's discharge amount/count via the login-free API (default 1800s, change below).\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
+        "description": "Login for citywaste.or.kr.\n\nLive check interval: refreshes just this month's discharge amount/count via the login-free API (default 1800s, change below).\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.\n\nThe tag print code/dong/ho needed for the live check are normally extracted automatically from the login response and settlement page, so leave them blank - only fill them in if that automatic extraction ever fails.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password",
-          "citywaste_refresh_interval": "Live check interval (seconds)"
+          "citywaste_refresh_interval": "Live check interval (seconds)",
+          "citywaste_tag_id": "Tag print code (leave blank for auto)",
+          "citywaste_dong": "Building/dong (leave blank for auto)",
+          "citywaste_ho": "Unit/ho (leave blank for auto)"
         }
       }
     },
