@@ -314,7 +314,7 @@ def sync_citywaste_sensors(
                 "attrs": {},
             },
             "음식물쓰레기 배출량": {
-                "display_name": "음쓰 배출량 (citywaste)",
+                "display_name": "음쓰 총 배출량 (citywaste)",
                 "value": row.get("discharge_kg"),
                 "unit": "kg",
                 "attrs": {},

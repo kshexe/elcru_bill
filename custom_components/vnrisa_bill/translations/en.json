@@ -41,11 +41,11 @@
         }
       },
       "bill_info": {
-        "title": "Management bill (vnrisa) check schedule",
+        "title": "Bill settings",
         "description": "The bill has no login and no fixed polling interval - it's only fetched when you paste that month's link into the 'Bill link' text entity. There is nothing to configure here."
       },
       "gas_login": {
-        "title": "Gas (GSE) login",
+        "title": "Gas settings",
         "description": "Re-enter this if your gas account password changed - it will be re-verified on save. The daily check time can also be changed here.",
         "data": {
           "gas_member_id": "Gas account ID",
@@ -54,7 +54,7 @@
         }
       },
       "kocom_login": {
-        "title": "Kocom login",
+        "title": "Kocom settings",
         "description": "Re-enter this if your Kocom password changed - the server address will be looked up again and re-verified on save.",
         "data": {
           "kocom_username": "Kocom ID",
@@ -63,7 +63,7 @@
         }
       },
       "citywaste_login": {
-        "title": "Food waste (citywaste) login",
+        "title": "Food waste settings",
         "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nThe live check interval (default 1800s/30min) and the last-month settlement check time (1st of each month, HH:MM, default 09:00) can also be changed here.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
