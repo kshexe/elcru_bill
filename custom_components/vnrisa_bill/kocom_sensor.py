@@ -154,8 +154,8 @@ def _device_info(entry: ConfigEntry) -> dict:
     return {
         "identifiers": {(DOMAIN, entry.entry_id)},
         "name": "엘크루 관리비",
-        "manufacturer": "vnrisa / GSE / Kocom / citywaste",
-        "model": "관리비·가스·코콤·음쓰",
+        "manufacturer": "vnrisa / GSE / citywaste / Kocom",
+        "model": "관리비·가스·음쓰·코콤",
     }
 
 

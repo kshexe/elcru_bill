@@ -14,8 +14,7 @@
         "description": "Enter your Kocom ID and password - the complex server address is looked up automatically and verified in one step.",
         "data": {
           "kocom_username": "Kocom ID",
-          "kocom_password": "Kocom password",
-          "kocom_update_interval": "Live poll interval (seconds)"
+          "kocom_password": "Kocom password"
         }
       }
     },
@@ -65,14 +64,13 @@
       },
       "citywaste_login": {
         "title": "Food waste (citywaste) login",
-        "description": "Login for citywaste.or.kr.\n\nLive check interval: refreshes just this month's discharge amount/count via the login-free API (default 1800s, change below).\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later, e.g. after a password change, does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.\n\nThe tag print code/dong/ho needed for the live check are normally extracted automatically from the login response and settlement page, so leave them blank - only fill them in if that automatic extraction ever fails.",
+        "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nThe live check interval is fixed at 1800s (30 min) and can't be changed here.\nLast-month settlement check time: 00:00 on the 1st of each month (+ on HA restart) - fixed, not configurable.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password",
-          "citywaste_refresh_interval": "Live check interval (seconds)",
-          "citywaste_tag_id": "Tag print code (leave blank for auto)",
-          "citywaste_dong": "Building/dong (leave blank for auto)",
-          "citywaste_ho": "Unit/ho (leave blank for auto)"
+          "citywaste_tag_id": "Tag print code",
+          "citywaste_dong": "Building/dong",
+          "citywaste_ho": "Unit/ho"
         }
       }
     },

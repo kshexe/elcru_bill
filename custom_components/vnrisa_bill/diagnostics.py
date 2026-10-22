@@ -12,17 +12,17 @@ from . import VnrisaConfigEntry
 TO_REDACT = {
     "gas_member_id",
     "gas_member_pwd",
+    "citywaste_id",
+    "citywaste_pwd",
+    "citywaste_tag_id",
+    "citywaste_dong",
+    "citywaste_ho",
     "kocom_username",
     "kocom_password",
     "kocom_fcm",
     "kocom_phone",
     "kocom_original_username",
     "kocom_ip",
-    "citywaste_id",
-    "citywaste_pwd",
-    "citywaste_tag_id",
-    "citywaste_dong",
-    "citywaste_ho",
 }
 
 

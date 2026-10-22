@@ -98,12 +98,15 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
         """② 코콤 아이디/비밀번호로 서버 주소 자동 조회 + 인증까지 한 화면에서 (옵션의
         재로그인 화면 - async_step_kocom_login과 같은 패턴). 원래는 "아이디만 입력 →
         IP 조회" 화면이 따로 있었는데(kocom_energy 원본 방식), 옵션 쪽은 이미 한
-        화면으로 합쳐져 있었던 거라 최초 설정도 똑같이 맞췄다."""
+        화면으로 합쳐져 있었던 거라 최초 설정도 똑같이 맞췄다.
+
+        조회주기는 최초 설정에서는 묻지 않고 기본값(DEFAULT_KOCOM_UPDATE_INTERVAL)을
+        그대로 쓴다 - 나중에 바꾸고 싶으면 옵션의 "코콤 설정"(async_step_kocom_login)
+        에서 조정한다."""
         errors: dict[str, str] = {}
         if user_input is not None:
             self._kocom_username = user_input[CONF_KOCOM_USERNAME].strip()
             kocom_password = user_input[CONF_KOCOM_PASSWORD]
-            update_interval = user_input[CONF_KOCOM_UPDATE_INTERVAL]
 
             try:
                 ip = await _lookup_kocom_ip(self._kocom_username)
@@ -139,7 +142,7 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
                             CONF_KOCOM_PASSWORD: hashed_password,
                             "kocom_fcm": fcm,
                             "kocom_phone": phone,
-                            CONF_KOCOM_UPDATE_INTERVAL: update_interval,
+                            CONF_KOCOM_UPDATE_INTERVAL: DEFAULT_KOCOM_UPDATE_INTERVAL,
                             "kocom_original_username": self._kocom_username,
                         },
                     )
@@ -153,9 +156,6 @@ class VnrisaConfigFlow(ConfigFlow, domain=DOMAIN):
                     vol.Required(CONF_KOCOM_PASSWORD): selector.TextSelector(
                         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                     ),
-                    vol.Required(
-                        CONF_KOCOM_UPDATE_INTERVAL, default=DEFAULT_KOCOM_UPDATE_INTERVAL
-                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
                 }
             ),
             errors=errors,
@@ -312,24 +312,20 @@ class VnrisaOptionsFlow(OptionsFlow):
         """음쓰(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
         여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음).
 
-        태그인쇄번호/동/호는 여기서(로그인 검증할 때) 딱 한 번만 자동으로 채워 넣고,
-        그 뒤로는(__init__.py의 async_refresh_citywaste) 이 저장된 값만 그대로
-        쓴다 - 매번 로그인/정산내역 페이지를 다시 파싱해서 실시간으로 덮어쓰지
-        않는다. 사용자가 직접 입력한 값이 있으면 그걸 그대로 두고, 비워뒀을 때만
-        로그인 검증 결과로 자동 채운다."""
+        아이디/비밀번호와 똑같이, 태그인쇄번호/동/호도 전부 사용자가 직접 입력하는
+        필수값이다 - 자동 추출/자동 채움 같은 건 없고, 여기서 입력받은 값을 그대로
+        저장해서 그 값만 쓴다(__init__.py의 async_refresh_citywaste). 조회주기는
+        여기서 묻지 않고 기본값(DEFAULT_CITYWASTE_REFRESH_INTERVAL)을 그대로 쓴다."""
         errors: dict[str, str] = {}
         data = self.config_entry.data
         if user_input is not None:
             member_id = user_input[CONF_CITYWASTE_ID].strip()
             member_pwd = user_input[CONF_CITYWASTE_PWD]
-            refresh_interval = user_input[CONF_CITYWASTE_REFRESH_INTERVAL]
-            tag_id = user_input.get(CONF_CITYWASTE_TAG_ID, "").strip()
-            dong = user_input.get(CONF_CITYWASTE_DONG, "").strip()
-            ho = user_input.get(CONF_CITYWASTE_HO, "").strip()
+            tag_id = user_input[CONF_CITYWASTE_TAG_ID].strip()
+            dong = user_input[CONF_CITYWASTE_DONG].strip()
+            ho = user_input[CONF_CITYWASTE_HO].strip()
             try:
-                _rows, _unit_price, auto_tag_id, auto_dong, auto_ho = await fetch_citywaste_history(
-                    member_id, member_pwd, months_back=1
-                )
+                await fetch_citywaste_history(member_id, member_pwd, months_back=1)
             except CitywasteLoginError as err:
                 _LOGGER.warning("음쓰(citywaste) 로그인 검증 실패: %s", err)
                 errors["base"] = "invalid_auth"
@@ -337,16 +333,15 @@ class VnrisaOptionsFlow(OptionsFlow):
                 _LOGGER.exception("음쓰(citywaste) 로그인 검증 중 알 수 없는 오류")
                 errors["base"] = "cannot_connect"
             else:
-                tag_id = tag_id or auto_tag_id or ""
-                dong = dong or auto_dong or ""
-                ho = ho or auto_ho or ""
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data={
                         **self.config_entry.data,
                         CONF_CITYWASTE_ID: member_id,
                         CONF_CITYWASTE_PWD: member_pwd,
-                        CONF_CITYWASTE_REFRESH_INTERVAL: refresh_interval,
+                        CONF_CITYWASTE_REFRESH_INTERVAL: data.get(
+                            CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL
+                        ),
                         CONF_CITYWASTE_TAG_ID: tag_id,
                         CONF_CITYWASTE_DONG: dong,
                         CONF_CITYWASTE_HO: ho,
@@ -366,16 +361,12 @@ class VnrisaOptionsFlow(OptionsFlow):
                         selector.TextSelectorConfig(type=selector.TextSelectorType.PASSWORD)
                     ),
                     vol.Required(
-                        CONF_CITYWASTE_REFRESH_INTERVAL,
-                        default=data.get(CONF_CITYWASTE_REFRESH_INTERVAL, DEFAULT_CITYWASTE_REFRESH_INTERVAL),
-                    ): vol.All(vol.Coerce(int), vol.Range(min=0)),
-                    vol.Optional(
                         CONF_CITYWASTE_TAG_ID, default=data.get(CONF_CITYWASTE_TAG_ID, "")
                     ): str,
-                    vol.Optional(
+                    vol.Required(
                         CONF_CITYWASTE_DONG, default=data.get(CONF_CITYWASTE_DONG, "")
                     ): str,
-                    vol.Optional(
+                    vol.Required(
                         CONF_CITYWASTE_HO, default=data.get(CONF_CITYWASTE_HO, "")
                     ): str,
                 }

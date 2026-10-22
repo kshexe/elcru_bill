@@ -310,9 +310,8 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})
     # 실시간 조회(async_refresh_citywaste_live)는 매번 로그인/정산내역 페이지를 다시
-    # 파싱하지 않고, 설정(음쓰 설정 화면)에 저장된 태그인쇄번호/동/호만 그대로 쓴다 -
-    # 이 값은 async_step_citywaste_login에서 로그인 검증할 때 한 번 자동으로 채워진
-    # 뒤로 고정이다.
+    # 파싱하지 않고, 설정(음쓰 설정 화면)에서 사용자가 직접 입력해 저장한
+    # 태그인쇄번호/동/호만 그대로 쓴다 - 자동 추출/채움은 없다.
     tag_id = entry.data.get(CONF_CITYWASTE_TAG_ID)
     dong = entry.data.get(CONF_CITYWASTE_DONG)
     ho = entry.data.get(CONF_CITYWASTE_HO)
