@@ -71,6 +71,20 @@ def _month_offset(month: str, delta_months: int) -> str:
     return f"{y:04d}-{m + 1:02d}"
 
 
+def _best_known_this_month(last_known: str | None) -> str | None:
+    """전월/작년은 순수 달력 계산이라 코콤이 안 끊겨도 원래 시스템 시계로 계산할 수
+    있다 - 코콤이 끊긴 동안 last_known(마지막으로 성공했을 때의 this_month)에 완전히
+    멈춰서 달이 넘어가도 안 따라가던 걸 고친다. 코콤 쪽 값과 시계 쪽 값 중 더 최근
+    달을 쓴다("YYYY-MM"은 문자열 비교로도 시간순 정렬이 맞음) - 코콤이 멀쩡하면 둘이
+    같아서 그대로고, 끊긴 동안엔 시계 쪽이 앞서가면서 자연스럽게 달을 따라간다. 단,
+    시계 기준으로 넘어간 새 달의 실제 데이터는 코콤이 다시 붙어야만 history에 들어오니
+    그 전까지는 "모름"으로 정직하게 비는 게 맞다(옛 달 값을 새 달인 척 보여주지 않음)."""
+    now_month = datetime.datetime.now().strftime("%Y-%m")
+    if last_known is None:
+        return now_month
+    return max(last_known, now_month)
+
+
 def _round_half_up(value: float | None) -> int | None:
     """예전 "...(반올림)" 도우미들과 같은 반올림 방식(음수 없는 사용량 전제) - 코콤이
     소수점 1자리까지 주는 값을 정수로 보여준다. history 자체는 원래 정밀도를 유지하고,
@@ -350,7 +364,7 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return {}
 
         attrs: dict = {"history": dict(sorted(self._history.items()))}
-        this_month = self._last_known_this_month
+        this_month = _best_known_this_month(self._last_known_this_month)
         if this_month:
             last_m = _month_offset(this_month, -1)
             if last_m in self._history:
@@ -395,8 +409,11 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
         # coordinator.data가 아니라 source(KocomSensor)가 마지막으로 성공했을 때 기억해둔
         # this_month를 쓴다 - 코콤 연결이 끊긴 동안엔 coordinator.data가 비어서 매번
         # 새로 읽으면 "모름"이 되지만, 전월/작년은 어차피 안 바뀌는 과거 값이라 연결이
-        # 끊겼다고 같이 비어 보일 이유가 없다.
-        this_month = self._source._last_known_this_month
+        # 끊겼다고 같이 비어 보일 이유가 없다. 거기서 한 번 더 - 끊긴 채로 달이
+        # 넘어가도 시스템 시계 기준으로는 계속 따라가게 _best_known_this_month로
+        # 보정한다(그 새 달의 실제 history는 코콤이 다시 붙어야 들어오니, 그 전까진
+        # 정직하게 "모름"으로 빈다).
+        this_month = _best_known_this_month(self._source._last_known_this_month)
         if not this_month:
             return None
         history = self._source._history
