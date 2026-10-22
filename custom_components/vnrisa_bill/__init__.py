@@ -290,7 +290,7 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     months_back = 1 if backfilled else 11
 
     try:
-        rows, unit_price, tag_id, dong, ho = await fetch_citywaste_history(
+        rows, unit_price, _tag_id, _dong, _ho = await fetch_citywaste_history(
             member_id, member_pwd, months_back=months_back
         )
     except CitywasteLoginError as err:
@@ -309,11 +309,13 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     ir.async_delete_issue(hass, DOMAIN, issue_id)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})
-    # 설정에서 수동으로 입력해둔 값이 있으면 그걸 우선한다(자동 추출이 깨졌을 때를
-    # 위한 수동 지정/대체용) - 없으면 로그인+정산내역 페이지에서 자동으로 뽑은 값을 씀.
-    tag_id = entry.data.get(CONF_CITYWASTE_TAG_ID) or tag_id
-    dong = entry.data.get(CONF_CITYWASTE_DONG) or dong
-    ho = entry.data.get(CONF_CITYWASTE_HO) or ho
+    # 실시간 조회(async_refresh_citywaste_live)는 매번 로그인/정산내역 페이지를 다시
+    # 파싱하지 않고, 설정(음쓰 설정 화면)에 저장된 태그인쇄번호/동/호만 그대로 쓴다 -
+    # 이 값은 async_step_citywaste_login에서 로그인 검증할 때 한 번 자동으로 채워진
+    # 뒤로 고정이다.
+    tag_id = entry.data.get(CONF_CITYWASTE_TAG_ID)
+    dong = entry.data.get(CONF_CITYWASTE_DONG)
+    ho = entry.data.get(CONF_CITYWASTE_HO)
     if tag_id and dong and ho:
         runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho = tag_id, dong, ho
     if runtime.citywaste_timestamp_sensor is not None:

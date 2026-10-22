@@ -310,7 +310,13 @@ class VnrisaOptionsFlow(OptionsFlow):
 
     async def async_step_citywaste_login(self, user_input: dict[str, Any] | None = None) -> ConfigFlowResult:
         """음쓰(citywaste.or.kr) 로그인 - 기존 설치에 새로 추가하는 용도라
-        여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음)."""
+        여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음).
+
+        태그인쇄번호/동/호는 여기서(로그인 검증할 때) 딱 한 번만 자동으로 채워 넣고,
+        그 뒤로는(__init__.py의 async_refresh_citywaste) 이 저장된 값만 그대로
+        쓴다 - 매번 로그인/정산내역 페이지를 다시 파싱해서 실시간으로 덮어쓰지
+        않는다. 사용자가 직접 입력한 값이 있으면 그걸 그대로 두고, 비워뒀을 때만
+        로그인 검증 결과로 자동 채운다."""
         errors: dict[str, str] = {}
         data = self.config_entry.data
         if user_input is not None:
@@ -321,7 +327,9 @@ class VnrisaOptionsFlow(OptionsFlow):
             dong = user_input.get(CONF_CITYWASTE_DONG, "").strip()
             ho = user_input.get(CONF_CITYWASTE_HO, "").strip()
             try:
-                await fetch_citywaste_history(member_id, member_pwd, months_back=1)
+                _rows, _unit_price, auto_tag_id, auto_dong, auto_ho = await fetch_citywaste_history(
+                    member_id, member_pwd, months_back=1
+                )
             except CitywasteLoginError as err:
                 _LOGGER.warning("음쓰(citywaste) 로그인 검증 실패: %s", err)
                 errors["base"] = "invalid_auth"
@@ -329,6 +337,9 @@ class VnrisaOptionsFlow(OptionsFlow):
                 _LOGGER.exception("음쓰(citywaste) 로그인 검증 중 알 수 없는 오류")
                 errors["base"] = "cannot_connect"
             else:
+                tag_id = tag_id or auto_tag_id or ""
+                dong = dong or auto_dong or ""
+                ho = ho or auto_ho or ""
                 self.hass.config_entries.async_update_entry(
                     self.config_entry,
                     data={
