@@ -125,12 +125,16 @@ async def _fetch_current_month_live(
     session: aiohttp.ClientSession, tag_id: str, dong: str, ho: str
 ) -> dict | None:
     """selectDischargerQuantityQuickMonthNew.do - 로그인 없이도 태그ID+동+호수만으로
-    이번달 1일부터 지금까지의 배출 건별 내역(건마다 kg)을 바로 준다. 이미 설치돼 있던
-    oukene/citywaste 컴포넌트가 쓰던 바로 그 API(실측으로 수치 일치 확인됨) - 정산
-    배치가 아직 안 돈 이번달의 실시간 배출량/배출건수를 보여주는 용도.
+    이번달 1일부터 지금까지의 배출 건별 내역(건마다 kg + dttime)을 바로 준다. 이미
+    설치돼 있던 oukene/citywaste 컴포넌트가 쓰던 바로 그 API(실측으로 수치 일치
+    확인됨) - 정산 배치가 아직 안 돈 이번달의 실시간 배출량/배출건수/최근배출량을
+    보여주는 용도.
 
     한 페이지가 10건이라 배출이 그보다 많은 달엔 여러 페이지로 나뉜다 - staiji/
-    citywaste_korea(github) 참고해서 totalPageCount만큼 다 돌며 합산한다."""
+    citywaste_korea(github) 참고해서 totalPageCount만큼 다 돌며 합산한다. 각 건의
+    "dttime"("YYYY-MM-DD HH:MM:SS")을 문자열 그대로 비교해서 제일 최근 건의 kg을
+    같이 뽑는다 - 페이지 1의 첫 건이 보통 최신이지만, 순서를 보장받지 않고 직접
+    최댓값을 찾는다."""
     today = date.today()
     params = {
         "tagprintcd": tag_id,
@@ -141,6 +145,8 @@ async def _fetch_current_month_live(
     }
     total_kg = 0.0
     total_count = 0
+    last_dttime: str | None = None
+    last_discharge_kg: float | None = None
     page = 1
     total_pages = 1
     try:
@@ -156,11 +162,20 @@ async def _fetch_current_month_live(
                 total_count = data.get("totalCnt", 0)
                 total_pages = (data.get("paginationInfo") or {}).get("totalPageCount", 1)
             for item in data.get("list") or []:
-                total_kg += item.get("qtyvalue", 0)
+                qty = item.get("qtyvalue", 0)
+                total_kg += qty
+                dttime = item.get("dttime")
+                if dttime and (last_dttime is None or dttime > last_dttime):
+                    last_dttime = dttime
+                    last_discharge_kg = qty
             page += 1
     except (aiohttp.ClientError, ValueError):
         return None
-    return {"discharge_kg": round(total_kg, 2), "discharge_count": total_count}
+    return {
+        "discharge_kg": round(total_kg, 2),
+        "discharge_count": total_count,
+        "last_discharge_kg": last_discharge_kg,
+    }
 
 
 def _month_back(base: date, months_back: int) -> tuple[int, int]:

@@ -135,7 +135,13 @@ _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "
 # slugify된 "안정적인 key" 그대로 쓴다.
 _CITYWASTE_UID_SUFFIXES = tuple(
     f"_{slugify(k)}"
-    for k in ("음식물쓰레기 정산금액", "음식물쓰레기 배출량", "음식물쓰레기 배출건수", "음쓰 kg당 단가")
+    for k in (
+        "음식물쓰레기 정산금액",
+        "음식물쓰레기 배출량",
+        "음식물쓰레기 배출건수",
+        "음쓰 kg당 단가",
+        "음식물쓰레기 최근배출량",
+    )
 )
 _USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
@@ -278,7 +284,11 @@ def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> No
         runtime.add_sensor_entities(new_entities)
 
 
-_CITYWASTE_PROMINENT_KEYS = {"음식물쓰레기 배출량", "음식물쓰레기 배출건수"}
+_CITYWASTE_PROMINENT_KEYS = {"음식물쓰레기 배출량", "음식물쓰레기 배출건수", "음식물쓰레기 최근배출량"}
+# "최근배출량"은 "이번 달 총량"이 아니라 "가장 최근 한 건의 kg"이라 지난 달 값이라는
+# 개념 자체가 없다(그 달이 끝나면 의미가 없어짐) - 다른 키들처럼 12개월 쌓아두지 않고
+# 이번 달 것만 남긴다.
+_CITYWASTE_CURRENT_MONTH_ONLY_KEYS = {"음식물쓰레기 최근배출량"}
 
 
 def sync_citywaste_sensors(
@@ -313,6 +323,12 @@ def sync_citywaste_sensors(
                 "display_name": "음쓰 배출건수 (citywaste)",
                 "value": row.get("discharge_count"),
                 "unit": "회",
+                "attrs": {},
+            },
+            "음식물쓰레기 최근배출량": {
+                "display_name": "음쓰 최근 배출량 (citywaste)",
+                "value": row.get("last_discharge_kg"),
+                "unit": "kg",
                 "attrs": {},
             },
         }
@@ -416,6 +432,9 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
             # 3개는 24개월로 서로 안 맞았다.
             if self._key in _USAGE_KEYS or self._key in _GAS_KEYS:
                 _prune_history(self._history, self._latest_month)
+            elif self._key in _CITYWASTE_CURRENT_MONTH_ONLY_KEYS:
+                for month in [m for m in self._history if m != self._latest_month]:
+                    del self._history[month]
         attrs["history"] = dict(sorted(self._history.items()))
         return attrs
 
