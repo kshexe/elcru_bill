@@ -364,12 +364,18 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
             return {}
 
         attrs: dict = {"history": dict(sorted(self._history.items()))}
-        this_month = _best_known_this_month(self._last_known_this_month)
-        if this_month:
-            last_m = _month_offset(this_month, -1)
+        # 전월은 코콤이 끊긴 채로 달이 넘어가도 last_known에 그대로 둔다 - 시계로
+        # 달을 앞당겨봤자 그 달의 전월 데이터 자체가 코콤에서 온 적이 없어서 결국
+        # "모름"이 될 뿐이라, 차라리 마지막으로 확인됐던 값을 계속 보여주는 쪽이
+        # 낫다. 작년은 이미 갖고 있는 오래된 데이터로 계산되니 시계 기준으로 계속
+        # 따라가는 게 이득이라 _best_known_this_month를 쓴다.
+        if self._last_known_this_month:
+            last_m = _month_offset(self._last_known_this_month, -1)
             if last_m in self._history:
                 attrs["전월"] = self._history[last_m]
-            year_ago = _nearest_year_ago(self._history, this_month)
+        year_ago_month = _best_known_this_month(self._last_known_this_month)
+        if year_ago_month:
+            year_ago = _nearest_year_ago(self._history, year_ago_month)
             if year_ago is not None:
                 attrs["작년"] = year_ago
         return attrs
@@ -409,11 +415,15 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
         # coordinator.data가 아니라 source(KocomSensor)가 마지막으로 성공했을 때 기억해둔
         # this_month를 쓴다 - 코콤 연결이 끊긴 동안엔 coordinator.data가 비어서 매번
         # 새로 읽으면 "모름"이 되지만, 전월/작년은 어차피 안 바뀌는 과거 값이라 연결이
-        # 끊겼다고 같이 비어 보일 이유가 없다. 거기서 한 번 더 - 끊긴 채로 달이
-        # 넘어가도 시스템 시계 기준으로는 계속 따라가게 _best_known_this_month로
-        # 보정한다(그 새 달의 실제 history는 코콤이 다시 붙어야 들어오니, 그 전까진
-        # 정직하게 "모름"으로 빈다).
-        this_month = _best_known_this_month(self._source._last_known_this_month)
+        # 끊겼다고 같이 비어 보일 이유가 없다.
+        #
+        # 전월은 last_known에 그대로 둔다 - 끊긴 채로 달이 넘어가도, 그 달의 전월
+        # 데이터 자체가 코콤에서 온 적이 없어서 시계로 앞당겨봤자 결국 "모름"이 될
+        # 뿐이다 - 차라리 마지막으로 확인됐던 값을 계속 보여주는 쪽이 낫다. 작년은
+        # 이미 갖고 있는 오래된 데이터로 계산되니 시계 기준으로 계속 따라가는 게
+        # 이득이라 _best_known_this_month를 쓴다.
+        last_known = self._source._last_known_this_month
+        this_month = last_known if self._kind == "last_month" else _best_known_this_month(last_known)
         if not this_month:
             return None
         history = self._source._history
