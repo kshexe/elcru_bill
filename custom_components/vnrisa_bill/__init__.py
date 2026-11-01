@@ -125,19 +125,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
     )
 
-    # 임시 진단(매달 1~7일) - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서,
-    # 그 기간 매시간 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일 고정
-    # 확인시각으로 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이 진단으로
-    # 확인 중이다 - 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜)
-    # 1주일로 넓혔다 - 확인되면 지운다. 이번 달에 이미 반영(최신월 변경)을 감지했으면
-    # 그 뒤로는 같은 달 안에서 더 조회하지 않는다(_gas_diag_detected_month) - 다음 달
-    # 1일이 되면 자동으로 다시 관찰을 시작한다.
+    # 임시 진단 - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서, 매시간
+    # 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일 고정 확인시각으로
+    # 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이 진단으로 확인 중이다 -
+    # 확인되면 지운다. 날짜 상한은 안 둔다 - 이번 달에 이미 반영(최신월 변경)을
+    # 감지했으면 그 뒤로는 같은 달 안에서 더 조회하지 않고(_gas_diag_detected_month),
+    # 아직 못 봤으면 그 달이 끝날 때까지 계속 조회한다. 다음 달 1일이 되면 자동으로
+    # 다시 관찰을 시작한다.
     _gas_diag_last_month = {"value": None}
     _gas_diag_detected_month = {"value": None}
 
     async def _gas_diagnostic_scheduled(now) -> None:
-        if now.day > 7:
-            return
         this_cycle = now.strftime("%Y-%m")
         if _gas_diag_detected_month["value"] == this_cycle:
             return
@@ -183,18 +181,15 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         )
     )
 
-    # 가스와 같은 임시 진단(매달 1~7일) - citywaste도 "지난달"(정산내역) 데이터가
-    # 정확히 몇 시에 올라오는지 몰라서, 그 기간 매시간 조회해서 로그로 남긴다.
-    # 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜) 1주일로 넓혔다 -
-    # 확인되면 지운다. 이번 달에 이미 반영(최신월 변경)을 감지했으면 그 뒤로는 같은 달
-    # 안에서 더 조회하지 않는다(_citywaste_diag_detected_month) - 다음 달 1일이 되면
-    # 자동으로 다시 관찰을 시작한다.
+    # 가스와 같은 임시 진단 - citywaste도 "지난달"(정산내역) 데이터가 정확히 몇 시에
+    # 올라오는지 몰라서, 매시간 조회해서 로그로 남긴다. 확인되면 지운다. 날짜 상한은
+    # 안 둔다 - 이번 달에 이미 반영(최신월 변경)을 감지했으면 그 뒤로는 같은 달 안에서
+    # 더 조회하지 않고(_citywaste_diag_detected_month), 아직 못 봤으면 그 달이 끝날
+    # 때까지 계속 조회한다. 다음 달 1일이 되면 자동으로 다시 관찰을 시작한다.
     _citywaste_diag_last_month = {"value": None}
     _citywaste_diag_detected_month = {"value": None}
 
     async def _citywaste_diagnostic_scheduled(now) -> None:
-        if now.day > 7:
-            return
         this_cycle = now.strftime("%Y-%m")
         if _citywaste_diag_detected_month["value"] == this_cycle:
             return
