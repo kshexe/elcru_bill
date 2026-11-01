@@ -46,11 +46,10 @@
       },
       "gas_login": {
         "title": "Gas settings",
-        "description": "Re-enter this if your gas account password changed - it will be re-verified on save. The monthly (1st of month) check time can also be changed here.",
+        "description": "Re-enter this if your gas account password changed - it will be re-verified on save.",
         "data": {
           "gas_member_id": "Gas account ID",
-          "gas_member_pwd": "Gas account password",
-          "gas_check_time": "Check time (1st of month, HH:MM, default 09:00)"
+          "gas_member_pwd": "Gas account password"
         }
       },
       "kocom_login": {
@@ -64,20 +63,18 @@
       },
       "citywaste_login": {
         "title": "Food waste settings",
-        "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nThe live check interval (default 1800s/30min) and the last-month settlement check time (1st of each month, HH:MM, default 09:00) can also be changed here.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
+        "description": "Enter your citywaste.or.kr login along with the tag print code/dong/ho needed for the live check (find these on citywaste.or.kr's \"나의 수수료 조회\" page).\n\nThe live check interval (default 1800s/30min) can also be changed here.\n\nThe very first time it has ever been fetched (not just the first time you save this form - re-entering it later does not redo this), it pulls the last 12 months at once; after that it only re-fetches last month alongside it.",
         "data": {
           "citywaste_id": "citywaste ID",
           "citywaste_pwd": "citywaste password",
           "citywaste_tag_id": "Tag print code",
           "citywaste_dong": "Building/dong",
           "citywaste_ho": "Unit/ho",
-          "citywaste_refresh_interval": "Live check interval (seconds, default 1800, 0 = disabled)",
-          "citywaste_check_time": "Check time (1st of month, HH:MM, default 09:00)"
+          "citywaste_refresh_interval": "Live check interval (seconds, default 1800, 0 = disabled)"
         }
       }
     },
     "error": {
-      "invalid_time": "Time must be in HH:MM format.",
       "invalid_auth": "Invalid ID or password.",
       "cannot_connect": "Could not connect to the server.",
       "ip_not_found": "Could not find the complex server address for this Kocom ID.",

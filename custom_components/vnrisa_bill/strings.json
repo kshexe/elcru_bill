@@ -46,11 +46,10 @@
       },
       "gas_login": {
         "title": "도시가스 설정",
-        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다. 매달 1일 확인시각도 여기서 바꿀 수 있습니다.",
+        "description": "비밀번호가 바뀌었을 때 여기서 다시 입력하면 로그인 검증까지 다시 합니다.",
         "data": {
           "gas_member_id": "도시가스 아이디",
-          "gas_member_pwd": "도시가스 비밀번호",
-          "gas_check_time": "확인시각 (매달 1일, HH:MM, 기본 09:00)"
+          "gas_member_pwd": "도시가스 비밀번호"
         }
       },
       "kocom_login": {
@@ -64,20 +63,18 @@
       },
       "citywaste_login": {
         "title": "음쓰 설정",
-        "description": "citywaste.or.kr 로그인 정보와 실시간 조회에 필요한 태그인쇄번호/동/호를 모두 직접 입력합니다(citywaste.or.kr '나의 수수료 조회' 페이지에서 확인 가능).\n\n실시간 조회주기(기본 1800초=30분)와 지난달 정산내역 확인시각(매달 1일, HH:MM, 기본 09:00)도 여기서 바로 바꿀 수 있습니다.\n\n설치 후 한 번도 조회 성공한 적이 없으면 최근 1년치를 한 번에 가져오고(이미 가져왔으면 다시 입력해도 다시 긁지 않습니다), 그 뒤로는 지난 달 1개월만 같이 갱신합니다.",
+        "description": "citywaste.or.kr 로그인 정보와 실시간 조회에 필요한 태그인쇄번호/동/호를 모두 직접 입력합니다(citywaste.or.kr '나의 수수료 조회' 페이지에서 확인 가능).\n\n실시간 조회주기(기본 1800초=30분)도 여기서 바로 바꿀 수 있습니다.\n\n설치 후 한 번도 조회 성공한 적이 없으면 최근 1년치를 한 번에 가져오고(이미 가져왔으면 다시 입력해도 다시 긁지 않습니다), 그 뒤로는 지난 달 1개월만 같이 갱신합니다.",
         "data": {
           "citywaste_id": "음쓰 아이디",
           "citywaste_pwd": "음쓰 비밀번호",
           "citywaste_tag_id": "태그인쇄번호",
           "citywaste_dong": "동",
           "citywaste_ho": "호",
-          "citywaste_refresh_interval": "실시간 조회주기 (초, 기본 1800, 0 = 사용안함)",
-          "citywaste_check_time": "확인시각 (매달 1일, HH:MM, 기본 09:00)"
+          "citywaste_refresh_interval": "실시간 조회주기 (초, 기본 1800, 0 = 사용안함)"
         }
       }
     },
     "error": {
-      "invalid_time": "시각은 HH:MM 형식이어야 합니다.",
       "invalid_auth": "아이디 또는 비밀번호가 올바르지 않습니다.",
       "cannot_connect": "서버에 연결하지 못했습니다.",
       "ip_not_found": "코콤 아이디로 단지 서버 주소를 찾지 못했습니다.",

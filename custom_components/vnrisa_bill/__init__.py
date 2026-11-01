@@ -7,10 +7,12 @@
 (entry.data에 넣으면 옵션 변경 감지용 update_listener가 매번 전체 reload를 일으켜서,
 그보다 가벼운 Store를 쓴다).
 
-도시가스는 설정(최초 설치 시)에서 입력한 아이디/비밀번호로 매일 지정 시각(설정 →
-옵션에서 변경 가능, 기본 09:00)에 로그인해서 24개월치 고지/수납내역을 한 번에
-재조회한다 - 로그인도 매번 새로 하므로(세션을 유지하지 않음) 세션 만료를 신경 쓸
-필요가 없다.
+도시가스/음쓰는 설정에서 입력한 아이디/비밀번호로 매시간 재조회하다가, "최신월"(지난달
+데이터)이 실제로 바뀐 걸 감지하면 그 즉시 알림을 보내고 그 달은 더 조회하지 않는다 -
+고정된 확인시각 대신 이 방식을 쓰는 이유는 GSE/citywaste 둘 다 지난달 데이터가 몇 시에
+올라올지, 심지어 당일에 올라오는지조차 미리 알 수 없기 때문이다(실측 결과 1일 하루
+종일 안 바뀐 적도 있음). 로그인도 매번 새로 하므로(세션을 유지하지 않음) 세션 만료를
+신경 쓸 필요가 없다.
 """
 from __future__ import annotations
 
@@ -28,19 +30,15 @@ from homeassistant.helpers.event import async_track_time_change, async_track_tim
 from homeassistant.helpers.storage import Store
 
 from .const import (
-    CONF_CITYWASTE_CHECK_TIME,
     CONF_CITYWASTE_DONG,
     CONF_CITYWASTE_HO,
     CONF_CITYWASTE_ID,
     CONF_CITYWASTE_PWD,
     CONF_CITYWASTE_REFRESH_INTERVAL,
     CONF_CITYWASTE_TAG_ID,
-    CONF_GAS_CHECK_TIME,
     CONF_GAS_MEMBER_ID,
     CONF_GAS_MEMBER_PWD,
-    DEFAULT_CITYWASTE_CHECK_TIME,
     DEFAULT_CITYWASTE_REFRESH_INTERVAL,
-    DEFAULT_GAS_CHECK_TIME,
     DOMAIN,
     PLATFORMS,
 )
@@ -112,112 +110,81 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     # recorder에 남은 마지막 값/history를 복원할 기회를 준다.
     await restore_orphaned_sensors(hass, entry)
 
-    check_time = entry.options.get(CONF_GAS_CHECK_TIME, DEFAULT_GAS_CHECK_TIME)
-    hour, minute = (int(x) for x in check_time.split(":"))
+    # 가스/음쓰 둘 다 "지난달" 데이터가 정확히 몇 시에 올라올지 미리 알 수 없어서(실측
+    # 결과 당일엔 안 올라오고 며칠씩 걸림), 고정 시각에 하루 한 번 확인하는 대신 매시간
+    # 확인하다가 "최신월"이 실제로 바뀌면 그 즉시 알림을 보내고 그 달은 더 조회하지
+    # 않는다(_gas_detected_month/_citywaste_detected_month) - 다음 달 1일이 되면
+    # 자동으로 다시 매시간 확인을 시작한다. 변경 전까지의 매시간 호출은 그냥
+    # async_refresh_gas/async_refresh_citywaste를 다시 부르는 것뿐이라, 이미 최신인
+    # 달엔 실질적으로 하는 일이 없다(API만 한 번씩 더 치는 정도).
+    _gas_last_month = {"value": None}
+    _gas_detected_month = {"value": None}
 
     async def _gas_scheduled(now) -> None:
-        # citywaste(_citywaste_scheduled)와 같은 이유로 매일이 아니라 매달 1일에만
-        # 확인한다 - GSE도 한 번 완료된 "지난달" 고지/수납내역은 그 뒤로 안 바뀐다.
-        if now.day == 1:
-            await async_refresh_gas(hass, entry)
-
-    entry.async_on_unload(
-        async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
-    )
-
-    # 임시 진단 - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서, 매시간
-    # 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일 고정 확인시각으로
-    # 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이 진단으로 확인 중이다 -
-    # 확인되면 지운다. 날짜 상한은 안 둔다 - 이번 달에 이미 반영(최신월 변경)을
-    # 감지했으면 그 뒤로는 같은 달 안에서 더 조회하지 않고(_gas_diag_detected_month),
-    # 아직 못 봤으면 그 달이 끝날 때까지 계속 조회한다. 다음 달 1일이 되면 자동으로
-    # 다시 관찰을 시작한다.
-    _gas_diag_last_month = {"value": None}
-    _gas_diag_detected_month = {"value": None}
-
-    async def _gas_diagnostic_scheduled(now) -> None:
         this_cycle = now.strftime("%Y-%m")
-        if _gas_diag_detected_month["value"] == this_cycle:
+        if _gas_detected_month["value"] == this_cycle:
             return
         await async_refresh_gas(hass, entry)
         usage_sensor = entry.runtime_data.gas_sensors.get("가스 사용량")
         latest_month = getattr(usage_sensor, "_latest_month", None)
         usage_value = getattr(usage_sensor, "_attr_native_value", None)
-        _LOGGER.warning(
-            "[가스 반영시각 진단] %s - 최신월=%s, 사용량=%s",
+        _LOGGER.debug(
+            "[가스 확인] %s - 최신월=%s, 사용량=%s",
             now.strftime("%Y-%m-%d %H:%M:%S"),
             latest_month,
             usage_value,
         )
-        previous = _gas_diag_last_month["value"]
+        previous = _gas_last_month["value"]
         if previous is not None and latest_month is not None and latest_month != previous:
+            _LOGGER.info("[가스 반영] 최신월이 %s -> %s로 바뀜, 사용량=%s", previous, latest_month, usage_value)
             await hass.services.async_call(
                 "notify",
                 "mobile_app_gangseongho",
                 {
-                    "title": "가스 반영시각 진단",
-                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 사용량={usage_value}) - 이번 달은 조회 중지",
+                    "title": "가스 반영",
+                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 사용량={usage_value})",
                 },
             )
-            _gas_diag_detected_month["value"] = this_cycle
-        _gas_diag_last_month["value"] = latest_month
+            _gas_detected_month["value"] = this_cycle
+        _gas_last_month["value"] = latest_month
 
     entry.async_on_unload(
-        async_track_time_change(hass, _gas_diagnostic_scheduled, minute=0, second=0)
+        async_track_time_change(hass, _gas_scheduled, minute=0, second=0)
     )
 
-    citywaste_check_time = entry.options.get(CONF_CITYWASTE_CHECK_TIME, DEFAULT_CITYWASTE_CHECK_TIME)
-    citywaste_hour, citywaste_minute = (int(x) for x in citywaste_check_time.split(":"))
+    _citywaste_last_month = {"value": None}
+    _citywaste_detected_month = {"value": None}
 
     async def _citywaste_scheduled(now) -> None:
-        # citywaste는 한 번 완료된 달 정산내역이 그 뒤로 안 바뀌어서 매일 다시 긁을
-        # 이유가 없다 - 매달 1일에만 확인한다.
-        if now.day == 1:
-            await async_refresh_citywaste(hass, entry)
-
-    entry.async_on_unload(
-        async_track_time_change(
-            hass, _citywaste_scheduled, hour=citywaste_hour, minute=citywaste_minute, second=0
-        )
-    )
-
-    # 가스와 같은 임시 진단 - citywaste도 "지난달"(정산내역) 데이터가 정확히 몇 시에
-    # 올라오는지 몰라서, 매시간 조회해서 로그로 남긴다. 확인되면 지운다. 날짜 상한은
-    # 안 둔다 - 이번 달에 이미 반영(최신월 변경)을 감지했으면 그 뒤로는 같은 달 안에서
-    # 더 조회하지 않고(_citywaste_diag_detected_month), 아직 못 봤으면 그 달이 끝날
-    # 때까지 계속 조회한다. 다음 달 1일이 되면 자동으로 다시 관찰을 시작한다.
-    _citywaste_diag_last_month = {"value": None}
-    _citywaste_diag_detected_month = {"value": None}
-
-    async def _citywaste_diagnostic_scheduled(now) -> None:
         this_cycle = now.strftime("%Y-%m")
-        if _citywaste_diag_detected_month["value"] == this_cycle:
+        if _citywaste_detected_month["value"] == this_cycle:
             return
         await async_refresh_citywaste(hass, entry)
         settle_sensor = entry.runtime_data.citywaste_sensors.get("음식물쓰레기 정산금액")
         latest_month = getattr(settle_sensor, "_latest_month", None)
         settle_value = getattr(settle_sensor, "_attr_native_value", None)
-        _LOGGER.warning(
-            "[음쓰 반영시각 진단] %s - 최신월=%s, 정산금액=%s",
+        _LOGGER.debug(
+            "[음쓰 확인] %s - 최신월=%s, 정산금액=%s",
             now.strftime("%Y-%m-%d %H:%M:%S"),
             latest_month,
             settle_value,
         )
-        previous = _citywaste_diag_last_month["value"]
+        previous = _citywaste_last_month["value"]
         if previous is not None and latest_month is not None and latest_month != previous:
+            _LOGGER.info("[음쓰 반영] 최신월이 %s -> %s로 바뀜, 정산금액=%s", previous, latest_month, settle_value)
             await hass.services.async_call(
                 "notify",
                 "mobile_app_gangseongho",
                 {
-                    "title": "음쓰 반영시각 진단",
-                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 정산금액={settle_value}) - 이번 달은 조회 중지",
+                    "title": "음쓰 반영",
+                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 정산금액={settle_value})",
                 },
             )
-            _citywaste_diag_detected_month["value"] = this_cycle
-        _citywaste_diag_last_month["value"] = latest_month
+            _citywaste_detected_month["value"] = this_cycle
+        _citywaste_last_month["value"] = latest_month
 
     entry.async_on_unload(
-        async_track_time_change(hass, _citywaste_diagnostic_scheduled, minute=0, second=0)
+        async_track_time_change(hass, _citywaste_scheduled, minute=0, second=0)
     )
 
     citywaste_refresh_interval = entry.data.get(
