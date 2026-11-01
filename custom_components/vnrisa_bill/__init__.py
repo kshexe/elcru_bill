@@ -129,11 +129,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     # 그 기간 매시간 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일 고정
     # 확인시각으로 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이 진단으로
     # 확인 중이다 - 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜)
-    # 1주일로 넓혔다 - 확인되면 지운다.
+    # 1주일로 넓혔다 - 확인되면 지운다. 이번 달에 이미 반영(최신월 변경)을 감지했으면
+    # 그 뒤로는 같은 달 안에서 더 조회하지 않는다(_gas_diag_detected_month) - 다음 달
+    # 1일이 되면 자동으로 다시 관찰을 시작한다.
     _gas_diag_last_month = {"value": None}
+    _gas_diag_detected_month = {"value": None}
 
     async def _gas_diagnostic_scheduled(now) -> None:
         if now.day > 7:
+            return
+        this_cycle = now.strftime("%Y-%m")
+        if _gas_diag_detected_month["value"] == this_cycle:
             return
         await async_refresh_gas(hass, entry)
         usage_sensor = entry.runtime_data.gas_sensors.get("가스 사용량")
@@ -152,9 +158,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
                 "mobile_app_gangseongho",
                 {
                     "title": "가스 반영시각 진단",
-                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 사용량={usage_value})",
+                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 사용량={usage_value}) - 이번 달은 조회 중지",
                 },
             )
+            _gas_diag_detected_month["value"] = this_cycle
         _gas_diag_last_month["value"] = latest_month
 
     entry.async_on_unload(
@@ -179,11 +186,17 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
     # 가스와 같은 임시 진단(매달 1~7일) - citywaste도 "지난달"(정산내역) 데이터가
     # 정확히 몇 시에 올라오는지 몰라서, 그 기간 매시간 조회해서 로그로 남긴다.
     # 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜) 1주일로 넓혔다 -
-    # 확인되면 지운다.
+    # 확인되면 지운다. 이번 달에 이미 반영(최신월 변경)을 감지했으면 그 뒤로는 같은 달
+    # 안에서 더 조회하지 않는다(_citywaste_diag_detected_month) - 다음 달 1일이 되면
+    # 자동으로 다시 관찰을 시작한다.
     _citywaste_diag_last_month = {"value": None}
+    _citywaste_diag_detected_month = {"value": None}
 
     async def _citywaste_diagnostic_scheduled(now) -> None:
         if now.day > 7:
+            return
+        this_cycle = now.strftime("%Y-%m")
+        if _citywaste_diag_detected_month["value"] == this_cycle:
             return
         await async_refresh_citywaste(hass, entry)
         settle_sensor = entry.runtime_data.citywaste_sensors.get("음식물쓰레기 정산금액")
@@ -202,9 +215,10 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
                 "mobile_app_gangseongho",
                 {
                     "title": "음쓰 반영시각 진단",
-                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 정산금액={settle_value})",
+                    "message": f"최신월이 {previous} -> {latest_month}로 바뀜 ({now.strftime('%Y-%m-%d %H:%M')}, 정산금액={settle_value}) - 이번 달은 조회 중지",
                 },
             )
+            _citywaste_diag_detected_month["value"] = this_cycle
         _citywaste_diag_last_month["value"] = latest_month
 
     entry.async_on_unload(
