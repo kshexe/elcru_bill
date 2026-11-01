@@ -125,12 +125,13 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         async_track_time_change(hass, _gas_scheduled, hour=hour, minute=minute, second=0)
     )
 
-    # 임시 진단(11월 1일만) - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서,
-    # 그날 하루만 매시간 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일
-    # 고정 확인시각으로 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이
-    # 진단으로 확인 중이다 - 확인되면 지운다.
+    # 임시 진단(매달 1~7일) - GSE가 "지난달" 데이터를 정확히 몇 시에 올리는지 몰라서,
+    # 그 기간 매시간 조회해서 로그로 남긴다. 위 _gas_scheduled는 이미 매달 1일 고정
+    # 확인시각으로 바뀌었지만, 그 "정확한 시각"이 몇 시여야 하는지는 아직 이 진단으로
+    # 확인 중이다 - 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜)
+    # 1주일로 넓혔다 - 확인되면 지운다.
     async def _gas_diagnostic_scheduled(now) -> None:
-        if now.day != 1:
+        if now.day > 7:
             return
         await async_refresh_gas(hass, entry)
         usage_sensor = entry.runtime_data.gas_sensors.get("가스 사용량")
@@ -160,11 +161,12 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
         )
     )
 
-    # 가스와 같은 임시 진단(11월 1일만) - citywaste도 "지난달"(정산내역) 데이터가
-    # 정확히 몇 시에 올라오는지 몰라서, 그날 하루만 매시간 조회해서 로그로 남긴다.
+    # 가스와 같은 임시 진단(매달 1~7일) - citywaste도 "지난달"(정산내역) 데이터가
+    # 정확히 몇 시에 올라오는지 몰라서, 그 기간 매시간 조회해서 로그로 남긴다.
+    # 11/1 하루만으로는 안 바뀌는 게 확인돼서(최신월이 종일 안 바뀜) 1주일로 넓혔다 -
     # 확인되면 지운다.
     async def _citywaste_diagnostic_scheduled(now) -> None:
-        if now.day != 1:
+        if now.day > 7:
             return
         await async_refresh_citywaste(hass, entry)
         settle_sensor = entry.runtime_data.citywaste_sensors.get("음식물쓰레기 정산금액")
