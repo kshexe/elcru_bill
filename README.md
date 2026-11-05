@@ -65,7 +65,7 @@ HACS → 사용자 지정 저장소 → `https://github.com/kshexe/elcru_bill` �
 설치 → HA 재시작.
 
 ### 수동
-`custom_components/vnrisa_bill` 폴더를 `config/custom_components/`에 복사 후 재시작.
+`custom_components/elcru_bill` 폴더를 `config/custom_components/`에 복사 후 재시작.
 
 ## 설정
 설정 → 기기 및 서비스 → 통합 추가 → **엘크루 관리비**

@@ -1,5 +1,5 @@
 {
-  "domain": "vnrisa_bill",
+  "domain": "elcru_bill",
   "name": "엘크루 관리비",
   "codeowners": [],
   "config_flow": true,
@@ -11,5 +11,5 @@
     "python-dateutil>=2.8"
   ],
   "single_config_entry": true,
-  "version": "1.5.0"
+  "version": "1.6.0"
 }

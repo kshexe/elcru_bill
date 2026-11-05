@@ -24,7 +24,7 @@ citywaste(RFID 음쓰(음식물쓰레기) 종량기)도 GSE와 같은 아이디/
 kocom_util.py)는 원본 그대로 포팅 - 바이트 오프라인 파싱 로직이라 손대지 않았다.
 """
 
-DOMAIN = "vnrisa_bill"
+DOMAIN = "elcru_bill"
 PLATFORMS = ["sensor", "text"]
 
 CONF_GAS_MEMBER_ID = "gas_member_id"
