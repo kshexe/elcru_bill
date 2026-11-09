@@ -28,6 +28,10 @@ UNIT_PRICE_URL = f"{BASE}/portal/status/selectStdUnitDetail.do"
 QUICK_MONTH_URL = f"{BASE}/portal/status/selectDischargerQuantityQuickMonthNew.do"
 QUICK_MONTH_REFERER = f"{BASE}/portal/status/selectSimpleEmissionQuantity.do"
 
+# staiji/citywaste_korea 0.2.0 참고 - 서버가 비정상적인 totalPageCount를 돌려줘도
+# 무한히 페이지를 돌지 않도록 하는 상한.
+MAX_PAGES = 50
+
 HEADERS = {
     "User-Agent": (
         "Mozilla/5.0 (Linux; Android 14; SM-S918N) AppleWebKit/537.36 "
@@ -131,10 +135,11 @@ async def _fetch_current_month_live(
     보여주는 용도.
 
     한 페이지가 10건이라 배출이 그보다 많은 달엔 여러 페이지로 나뉜다 - staiji/
-    citywaste_korea(github) 참고해서 totalPageCount만큼 다 돌며 합산한다. 각 건의
-    "dttime"("YYYY-MM-DD HH:MM:SS")을 문자열 그대로 비교해서 제일 최근 건의 kg을
-    같이 뽑는다 - 페이지 1의 첫 건이 보통 최신이지만, 순서를 보장받지 않고 직접
-    최댓값을 찾는다."""
+    citywaste_korea(github) 참고해서 totalPageCount만큼 다 돌며 합산한다(단, 서버가
+    비정상 값을 주는 경우에 대비해 MAX_PAGES로 상한을 둔다 - 같은 참고 레포의 0.2.0
+    에서 가져온 방어). 각 건의 "dttime"("YYYY-MM-DD HH:MM:SS")을 문자열 그대로
+    비교해서 제일 최근 건의 kg을 같이 뽑는다 - 페이지 1의 첫 건이 보통 최신이지만,
+    순서를 보장받지 않고 직접 최댓값을 찾는다."""
     today = date.today()
     params = {
         "tagprintcd": tag_id,
@@ -160,7 +165,7 @@ async def _fetch_current_month_live(
                 data = await resp.json(content_type=None)
             if page == 1:
                 total_count = data.get("totalCnt", 0)
-                total_pages = (data.get("paginationInfo") or {}).get("totalPageCount", 1)
+                total_pages = min((data.get("paginationInfo") or {}).get("totalPageCount", 1), MAX_PAGES)
             for item in data.get("list") or []:
                 qty = item.get("qtyvalue", 0)
                 total_kg += qty
