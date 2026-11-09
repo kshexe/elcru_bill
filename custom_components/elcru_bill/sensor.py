@@ -129,12 +129,12 @@ def _icon_for_key(key: str) -> str:
 
 
 _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
-# restore_orphaned_sensors가 citywaste 항목을 제외할 때 쓴다 - sync_citywaste_sensors가
-# 만드는 unique_id(f"{entry_id}_{slugify(내부 key)}")와 정확히 같은 접미사라야 하므로,
-# 표시명에서 "(citywaste)" 태그만 떼서 비교하는 방식(이름이 또 바뀌면 깨짐) 대신
-# slugify된 "안정적인 key" 그대로 쓴다.
-_CITYWASTE_UID_SUFFIXES = tuple(
-    f"_{slugify(k)}"
+# restore_orphaned_sensors가 citywaste 항목을 복구할 때 쓴다 - 표시명에서 "(citywaste)"
+# 태그만 떼서 vnrisa/GSE처럼 key로 되돌리는 방식은 안 통한다(sync_citywaste_sensors가
+# 쓰는 내부 key, 예: "음식물쓰레기 정산금액"이 표시명, 예: "음쓰 정산금액 (citywaste)"과
+# 다름) - 그래서 slugify된 안정적인 unique_id 접미사에서 바로 내부 key로 매핑한다.
+_CITYWASTE_UID_SUFFIX_TO_KEY = {
+    f"_{slugify(k)}": k
     for k in (
         "음식물쓰레기 정산금액",
         "음식물쓰레기 배출량",
@@ -142,7 +142,18 @@ _CITYWASTE_UID_SUFFIXES = tuple(
         "음쓰 kg당 단가",
         "음식물쓰레기 최근배출량",
     )
-)
+}
+# restore_orphaned_sensors가 복구용 껍데기를 만들 때 쓰는 표시명 - sync_citywaste_sensors가
+# 실제로 쓰는 display_name과 반드시 같아야 한다(set_value는 이름을 다시 쓰지 않으므로,
+# 여기서 다르면 복구된 엔티티의 이름이 영원히 어긋난 채로 남는다). sync_citywaste_sensors를
+# 고치면 이것도 같이 고쳐야 한다.
+_CITYWASTE_DISPLAY_NAMES = {
+    "음식물쓰레기 정산금액": "음쓰 정산금액 (citywaste)",
+    "음식물쓰레기 배출량": "음쓰 총 배출량 (citywaste)",
+    "음식물쓰레기 배출건수": "음쓰 배출건수 (citywaste)",
+    "음쓰 kg당 단가": "음쓰 단가 (citywaste)",
+    "음식물쓰레기 최근배출량": "음쓰 최근 배출량 (citywaste)",
+}
 _USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
 
@@ -184,15 +195,23 @@ async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry
     조회에 없는 건 값 없는 껍데기로 다시 만들어 RestoreEntity가 recorder에 남은 마지막
     값/history를 복원할 기회를 준다.
 
-    kocom(접두사로 구분)과 citywaste(_CITYWASTE_UID_SUFFIXES로 구분)는 대상에서 뺀다 -
-    둘 다 매번 전체 항목을 다시 채우는 고정 센서들이라(vnrisa 고지서처럼 그 달에
-    어쩌다 빠지는 항목이 없음) "고아"가 될 일이 없고, 여기서 잘못 다루면(이 함수는
-    vnrisa/GSE 2종류 태그만 알아서, "(citywaste)" 태그 붙은 표시명을 못 알아봄)
-    unique_id는 같은데 표시명만 다른 중복 엔티티를 만들려다 "ignoring" 경고만 남긴다."""
+    kocom(접두사로 구분)은 대상에서 뺀다 - 매번 전체 항목을 다시 채우는 고정
+    센서들이라 "고아"가 될 일이 없다.
+
+    citywaste도 매번 전체 항목을 다시 채우는 고정 센서들이라 "고아"가 될 일은 없지만
+    (선거관리운영비 같은 간헐적 항목이 없음), 가스/vnrisa와 달리 음쓰 조회
+    (async_refresh_citywaste)가 재시작 중 실패하거나 끝나기 전이면 이번 세션에
+    엔티티가 아예 안 만들어져 "사용 불가"로 남는다 - 실제로 이렇게 실패한 사례를
+    확인한 건 아니지만(2026-11-06 재시작 직후의 "2026-10":0은 그 달이 아직 정산
+    전이라 원래 0이 맞게 찍힌 정상 동작이었다), 가스/vnrisa는 이미 이 안전망이 있는데
+    citywaste만 없는 비대칭이라 똑같이 막아둔다. 다만 표시명에서 "(citywaste)" 태그만
+    떼는 식(vnrisa/GSE 전용 `_TAG_RE`)으로는 내부 key를 못 찾아서(표시명이 내부
+    key와 전혀 다름, 예: "음쓰 정산금액" vs "음식물쓰레기 정산금액")
+    `_CITYWASTE_UID_SUFFIX_TO_KEY`로 unique_id 접미사에서 직접 매핑한다."""
     runtime = entry.runtime_data
     registry = er.async_get(hass)
     kocom_prefix = f"{entry.entry_id}_kocom_"
-    skip_suffixes = ("_bill_timestamp", "_gas_timestamp", "_citywaste_timestamp") + _CITYWASTE_UID_SUFFIXES
+    skip_suffixes = ("_bill_timestamp", "_gas_timestamp", "_citywaste_timestamp")
     new_entities = []
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if reg_entry.domain != "sensor" or reg_entry.platform != DOMAIN:
@@ -200,6 +219,24 @@ async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry
         uid = reg_entry.unique_id
         if uid.startswith(kocom_prefix) or uid.endswith(skip_suffixes):
             continue
+
+        citywaste_key = next((k for suffix, k in _CITYWASTE_UID_SUFFIX_TO_KEY.items() if uid.endswith(suffix)), None)
+        if citywaste_key is not None:
+            if citywaste_key in runtime.citywaste_sensors:
+                continue
+            category = None if citywaste_key in _CITYWASTE_PROMINENT_KEYS else EntityCategory.DIAGNOSTIC
+            stub_item = {
+                "display_name": _CITYWASTE_DISPLAY_NAMES[citywaste_key],
+                "value": None,
+                "unit": None,
+                "attrs": {},
+            }
+            sensor = VnrisaItemSensor(entry, citywaste_key, stub_item, None, entity_category=category)
+            sensor._attr_unique_id = uid
+            runtime.citywaste_sensors[citywaste_key] = sensor
+            new_entities.append(sensor)
+            continue
+
         key = _TAG_RE.sub("", reg_entry.original_name or uid)
         is_gas = key in _GAS_KEYS
         sensors = runtime.gas_sensors if is_gas else runtime.item_sensors
