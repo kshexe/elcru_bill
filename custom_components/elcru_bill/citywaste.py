@@ -239,7 +239,9 @@ async def fetch_citywaste_history(
                 dong, ho = parsed["dong"], parsed["ho"]
             rows.append(parsed)
 
-        current_row: dict = {"month": f"{today.year:04d}-{today.month:02d}", "final_amount": 0}
+        # pending=True: final_amount은 아직 정산 전이라는 뜻의 자리채우기 0 - 실제
+        # 정산되기 전까지는 이 0이 sensor.py의 헤드라인 값을 덮어쓰면 안 된다.
+        current_row: dict = {"month": f"{today.year:04d}-{today.month:02d}", "final_amount": 0, "pending": True}
         if tag_id and dong and ho:
             live = await _fetch_current_month_live(session, tag_id, dong, ho)
             if live is not None:

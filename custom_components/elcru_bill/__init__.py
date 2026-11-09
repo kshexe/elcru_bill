@@ -356,7 +356,9 @@ async def async_refresh_citywaste_live(hass: HomeAssistant, entry: VnrisaConfigE
         return
 
     this_month = datetime.datetime.now().strftime("%Y-%m")
-    sync_citywaste_sensors(entry, [{"month": this_month, "final_amount": 0, **live}])
+    # pending=True: citywaste.py의 fetch_citywaste_history와 같은 이유로, 이번 달
+    # final_amount=0이 "음쓰 정산금액" 헤드라인 값을 덮어쓰지 않게 한다.
+    sync_citywaste_sensors(entry, [{"month": this_month, "final_amount": 0, "pending": True, **live}])
     if runtime.citywaste_timestamp_sensor is not None:
         runtime.citywaste_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
 

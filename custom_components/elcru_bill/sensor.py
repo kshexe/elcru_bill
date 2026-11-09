@@ -338,11 +338,17 @@ def sync_citywaste_sensors(
     여기서 key를 바꾸면 slugify 결과가 달라져서 entity_id가 바뀌고 history가 끊긴다
     (flatten_bill_items의 key/display_name 분리 원칙과 동일).
 
-    kg당 단가는 달 구분 없는 고정값이라 month 없이(=항상 최신으로 취급) 반영한다."""
+    kg당 단가는 달 구분 없는 고정값이라 month 없이(=항상 최신으로 취급) 반영한다.
+
+    정산금액(final_amount)은 citywaste.py가 이번 달 행을 항상 "아직 정산 전"이라는
+    뜻으로 0을 끼워 보낸다(row.get("pending")) - 그 행이 헤드라인 값을 덮어쓰지
+    않도록 VnrisaItemSensor.set_value에 pending을 그대로 넘긴다. 배출량/배출건수/
+    최근배출량은 이번 달 것도 실시간 API로 받은 진짜 값이라 pending을 안 준다."""
     runtime = entry.runtime_data
     new_entities = []
     for row in rows:
         month = row.get("month")
+        settlement_pending = bool(row.get("pending"))
         items = {
             "음식물쓰레기 정산금액": {
                 "display_name": "음쓰 정산금액 (citywaste)",
@@ -370,14 +376,15 @@ def sync_citywaste_sensors(
             },
         }
         for key, item in items.items():
+            pending = settlement_pending if key == "음식물쓰레기 정산금액" else False
             existing = runtime.citywaste_sensors.get(key)
             if existing is None:
                 category = None if key in _CITYWASTE_PROMINENT_KEYS else EntityCategory.DIAGNOSTIC
-                sensor = VnrisaItemSensor(entry, key, item, month, entity_category=category)
+                sensor = VnrisaItemSensor(entry, key, item, month, entity_category=category, pending=pending)
                 runtime.citywaste_sensors[key] = sensor
                 new_entities.append(sensor)
             else:
-                existing.set_value(item, month)
+                existing.set_value(item, month, pending=pending)
 
     if unit_price is not None:
         key = "음쓰 kg당 단가"
@@ -440,6 +447,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         item: dict[str, Any],
         month: str | None,
         entity_category: EntityCategory | None = EntityCategory.DIAGNOSTIC,
+        pending: bool = False,
     ) -> None:
         self._key = key
         self._attr_entity_category = entity_category
@@ -451,7 +459,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         self._latest_month: str | None = None
         self._history: dict[str, Any] = {}
         self._regular_attrs: dict[str, Any] = {}
-        self.set_value(item, month)
+        self.set_value(item, month, pending=pending)
 
     def _build_extra_attrs(self) -> dict[str, Any]:
         attrs = dict(self._regular_attrs)
@@ -505,10 +513,18 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
         if self.hass is not None:
             self.async_write_ha_state()
 
-    def set_value(self, item: dict[str, Any], month: str | None) -> None:
+    def set_value(self, item: dict[str, Any], month: str | None, pending: bool = False) -> None:
+        """`pending=True`는 "이번 달은 아직 정산 전이라 0으로 찍힌 자리 채우기용 값"
+        이라는 뜻 - citywaste.py의 정산금액이 매번 이번 달을 final_amount=0으로
+        끼워 보내는데, 그게 월 비교(`month >= self._latest_month`)에서 항상 이겨서
+        헤드라인 값을 계속 0으로 덮어쓰는 문제가 있었다(실제 확정된 지난달 값은
+        history에는 멀쩡히 남지만 화면 메인 값만 0으로 보임). pending인 행은
+        history에는 그대로 기록하되(그래야 "이번 달 아직 0"이라는 정보 자체는
+        남는다) `_latest_month`/헤드라인 값은 건드리지 않아서, 메인 값이 계속
+        마지막으로 확정된 달 것을 보여주게 한다."""
         if month is not None:
             self._history[month] = item.get("value")
-            is_latest = self._latest_month is None or month >= self._latest_month
+            is_latest = not pending and (self._latest_month is None or month >= self._latest_month)
         else:
             is_latest = True  # 월 정보가 없으면(이례적) 그냥 최신으로 취급
 
