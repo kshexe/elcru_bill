@@ -56,11 +56,23 @@ async def async_setup_entry(
 
     runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각 (vnrisa)", "bill_timestamp")
     runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각 (GSE)", "gas_timestamp")
+    # 음쓰는 두 스케줄러가 서로 무관하게 따로 도는데(async_refresh_citywaste_live는
+    # 월 감지와 무관하게 항상 30분마다, async_refresh_citywaste는 로그인까지 하는
+    # 무거운 정산내역 확인이고 그 달이 이미 감지되면 멈춤) 조회시각을 하나로 합쳐두면
+    # 실시간 쪼만 계속 돌아도 "정산 확인도 아직 돈다"처럼 보여서 헷갈린다 - 둘로 나눈다.
     runtime.citywaste_timestamp_sensor = VnrisaTimestampSensor(
         entry, "음쓰 조회시각 (citywaste)", "citywaste_timestamp"
     )
+    runtime.citywaste_settlement_timestamp_sensor = VnrisaTimestampSensor(
+        entry, "음쓰 정산 조회시각 (citywaste)", "citywaste_settlement_timestamp"
+    )
     async_add_entities(
-        [runtime.bill_timestamp_sensor, runtime.gas_timestamp_sensor, runtime.citywaste_timestamp_sensor]
+        [
+            runtime.bill_timestamp_sensor,
+            runtime.gas_timestamp_sensor,
+            runtime.citywaste_timestamp_sensor,
+            runtime.citywaste_settlement_timestamp_sensor,
+        ]
     )
 
     await async_setup_kocom_entry(hass, entry, async_add_entities)
@@ -211,7 +223,12 @@ async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry
     runtime = entry.runtime_data
     registry = er.async_get(hass)
     kocom_prefix = f"{entry.entry_id}_kocom_"
-    skip_suffixes = ("_bill_timestamp", "_gas_timestamp", "_citywaste_timestamp")
+    skip_suffixes = (
+        "_bill_timestamp",
+        "_gas_timestamp",
+        "_citywaste_timestamp",
+        "_citywaste_settlement_timestamp",
+    )
     new_entities = []
     for reg_entry in er.async_entries_for_config_entry(registry, entry.entry_id):
         if reg_entry.domain != "sensor" or reg_entry.platform != DOMAIN:

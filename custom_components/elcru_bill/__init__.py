@@ -79,7 +79,12 @@ class VnrisaRuntimeData:
     # 않고 그 뒤로는 최근 2달만 가볍게 갱신한다.
     citywaste_error: str | None = None
     citywaste_sensors: dict[str, Any] = field(default_factory=dict)
+    # citywaste_timestamp_sensor: 로그인 없는 실시간 전용 폴링(async_refresh_citywaste_live)
+    # 전용 - 월 감지와 무관하게 항상 돈다. citywaste_settlement_timestamp_sensor: 로그인해서
+    # 정산내역까지 긁는 무거운 쪽(async_refresh_citywaste) 전용 - 그 달이 감지되면 멈춘다.
+    # 하나로 합쳐두면 실시간 쪽만 계속 돌아도 정산 확인도 아직 도는 것처럼 보여서 나눴다.
     citywaste_timestamp_sensor: Any = None
+    citywaste_settlement_timestamp_sensor: Any = None
     citywaste_backfill_store: Store | None = None
     # 실시간 전용 폴링(async_refresh_citywaste_live)이 매번 로그인하지 않고 바로 쓸 수
     # 있게, 월 1회 도는 전체 조회(async_refresh_citywaste) 때마다 갱신해둔다.
@@ -331,8 +336,10 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     ho = entry.data.get(CONF_CITYWASTE_HO)
     if tag_id and dong and ho:
         runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho = tag_id, dong, ho
-    if runtime.citywaste_timestamp_sensor is not None:
-        runtime.citywaste_timestamp_sensor.set_value(datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S"))
+    if runtime.citywaste_settlement_timestamp_sensor is not None:
+        runtime.citywaste_settlement_timestamp_sensor.set_value(
+            datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+        )
 
 
 async def async_refresh_citywaste_live(hass: HomeAssistant, entry: VnrisaConfigEntry) -> None:
