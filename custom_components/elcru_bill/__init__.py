@@ -103,7 +103,7 @@ async def async_setup_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> bo
 
     stored_url = await runtime.url_store.async_load()
     if stored_url:
-        await async_refresh_bill(hass, entry, stored_url)
+        await async_refresh_bill(hass, entry, stored_url, silent_before_day=20)
 
     await async_refresh_gas(hass, entry)  # 설치/재시작 직후 바로 한 번 조회
     await async_refresh_citywaste(hass, entry)  # 설치/재시작 직후 바로 한 번 조회(1회성 백필 포함)
@@ -221,28 +221,42 @@ async def async_unload_entry(hass: HomeAssistant, entry: VnrisaConfigEntry) -> b
     return await hass.config_entries.async_unload_platforms(entry, PLATFORMS)
 
 
-async def async_refresh_bill(hass: HomeAssistant, entry: VnrisaConfigEntry, url: str) -> bool:
+async def async_refresh_bill(
+    hass: HomeAssistant, entry: VnrisaConfigEntry, url: str, *, silent_before_day: int | None = None
+) -> bool:
     """고지서 링크를 조회해서 센서에 반영하고, 성공하면 Store에 저장해 다음 재시작 때도
     자동으로 다시 쓸 수 있게 한다. text.py(사용자가 직접 입력)와 여기(재시작 시 자동
-    재조회) 양쪽에서 같이 쓰는 공용 함수."""
+    재조회) 양쪽에서 같이 쓰는 공용 함수.
+
+    silent_before_day: 재시작 시 저장된 "지난달" 링크를 자동으로 재조회할 때만 쓴다
+    (text.py의 수동 입력 경로는 항상 None - 사용자가 직접 넣은 링크가 실패하면 그건
+    바로 알려줘야 한다). 토큰이 YYYYMM별로 1회용이라 새 달이 됐는데 아직 이번 달
+    링크를 안 넣었으면 이 재조회는 항상 실패하는데, 실측으로 확인한 고지서 발행일이
+    매달 20~25일 사이(4/23, 5/24, 6/24, 7/25, 8/23, 9/20, 10/23 - 요일/연휴와는
+    뚜렷한 상관관계가 안 보임, 가장 빨랐던 적도 20일)라 그 전엔 아직 "이번 달 고지서
+    자체가 안 나왔을 가능성"이 높다. 그 전까지는 실패가 당연한 거라 Repair로 띄우지
+    않는다 - 20일이 지나도 계속 실패하면 그때부터 평소처럼 띄운다."""
     from .fetch import fetch_bill  # 순환 임포트 방지용 지연 임포트
     from .sensor import sync_item_sensors
 
     runtime = entry.runtime_data
     runtime.url = url
     issue_id = f"{entry.entry_id}_bill_fetch_failed"
+    should_report = silent_before_day is None or datetime.datetime.now().day >= silent_before_day
     try:
         data = await fetch_bill(url)
     except (aiohttp.ClientError, TimeoutError) as err:
         _LOGGER.warning("고지서 조회 실패: %s", err)
         runtime.error = f"조회 실패: {err}"
-        _create_fetch_issue(hass, issue_id, "bill_fetch_failed", str(err))
+        if should_report:
+            _create_fetch_issue(hass, issue_id, "bill_fetch_failed", str(err))
         return False
 
     if not data.get("month") or not data.get("summary"):
         _LOGGER.warning("고지서 항목을 찾지 못함 (페이지 구조 변경 또는 잘못된 링크)")
         runtime.error = "고지서 항목을 찾지 못함 - 링크가 올바른지 확인하세요"
-        _create_fetch_issue(hass, issue_id, "bill_fetch_failed", runtime.error)
+        if should_report:
+            _create_fetch_issue(hass, issue_id, "bill_fetch_failed", runtime.error)
         return False
 
     runtime.error = None
