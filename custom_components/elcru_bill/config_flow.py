@@ -302,8 +302,10 @@ class VnrisaOptionsFlow(OptionsFlow):
         여기가 최초 입력 지점이다(처음 설치할 때는 이 항목 자체가 없었음).
 
         아이디/비밀번호와 똑같이, 태그인쇄번호/동/호도 전부 사용자가 직접 입력하는
-        필수값이다 - 자동 추출/자동 채움 같은 건 없고, 여기서 입력받은 값을 그대로
-        저장해서 그 값만 쓴다(__init__.py의 async_refresh_citywaste).
+        필수값이다 - __init__.py의 async_refresh_citywaste가 로그인/정산내역 페이지에서
+        실제 값을 자동으로 뽑아낼 수 있을 때는 그걸 우선으로 쓰지만, 설치 직후나 아직
+        한 번도 정산내역 페이지를 못 긁었을 때를 위한 초깃값/대체값으로 여기서 받은
+        값을 그대로 저장해둔다.
 
         "입력 안 받고 기본값" 규칙은 최초 통합 설치 2단계(async_step_user/
         async_step_kocom_account)에만 적용된다 - 거기엔 citywaste 항목 자체가 없다.

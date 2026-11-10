@@ -241,10 +241,21 @@ async def fetch_citywaste_history(
 
         # pending=True: final_amount은 아직 정산 전이라는 뜻의 자리채우기 0 - 실제
         # 정산되기 전까지는 이 0이 sensor.py의 헤드라인 값을 덮어쓰면 안 된다.
-        current_row: dict = {"month": f"{today.year:04d}-{today.month:02d}", "final_amount": 0, "pending": True}
+        #
+        # live_ok=False(기본값): 배출량/배출건수/최근배출량은 바로 아래 실시간 API
+        # 호출이 실패하면 이 행에 그 키들 자체가 안 생긴다 - 네트워크 오류로 이번
+        # 조회만 실패한 건데 그걸 "0건/0kg"으로 착각해 헤드라인을 덮어쓰면 안 되니,
+        # live_ok를 같이 넘겨서 sensor.py가 그 경우에만 기존 값을 보존하게 한다.
+        current_row: dict = {
+            "month": f"{today.year:04d}-{today.month:02d}",
+            "final_amount": 0,
+            "pending": True,
+            "live_ok": False,
+        }
         if tag_id and dong and ho:
             live = await _fetch_current_month_live(session, tag_id, dong, ho)
             if live is not None:
                 current_row.update(live)
+                current_row["live_ok"] = True
         rows.append(current_row)
     return rows, unit_price, tag_id, dong, ho

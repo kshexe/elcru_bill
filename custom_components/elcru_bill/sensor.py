@@ -15,10 +15,10 @@
 표시 문구를 나중에 또 바꾸더라도 entity_id가 안 바뀌어서 history가 안 날아간다.
 
 프로미넌트(기본 카테고리, 기기 카드 상단)로 남는 건 코콤의 전기/가스/수도 사용량
-3개뿐이다(kocom_sensor.py) - 실시간 로컬 월패드 값이라 가장 "지금" 상황을 보여주는
-대표값으로 쓴다. vnrisa/GSE 쪽은 전부 진단으로 내려가고, 서로 이름이 겹치는 항목이
-많아서(예: 전기 사용량이 vnrisa/코콤 양쪽에 있음) 전부 "(vnrisa)"/"(GSE)" 출처 태그를
-붙인다.
+3개(kocom_sensor.py)와 음쓰의 배출량/배출건수/최근배출량 3개(_CITYWASTE_PROMINENT_KEYS)
+뿐이다 - 전부 실시간/실측값이라 가장 "지금" 상황을 보여주는 대표값으로 쓴다. vnrisa/GSE
+쪽과 음쓰 정산금액/단가는 전부 진단으로 내려가고, 서로 이름이 겹치는 항목이 많아서(예:
+전기 사용량이 vnrisa/코콤 양쪽에 있음) 전부 "(vnrisa)"/"(GSE)" 출처 태그를 붙인다.
 """
 from __future__ import annotations
 
@@ -326,6 +326,15 @@ _CITYWASTE_PROMINENT_KEYS = {"음식물쓰레기 배출량", "음식물쓰레기
 # 개념 자체가 없다(그 달이 끝나면 의미가 없어짐) - 다른 키들처럼 12개월 쌓아두지 않고
 # 이번 달 것만 남긴다.
 _CITYWASTE_CURRENT_MONTH_ONLY_KEYS = {"음식물쓰레기 최근배출량"}
+# 정산금액/배출량/배출건수는 매달 history에 쌓이기만 하고 가스/사용량(_GAS_KEYS/
+# _USAGE_KEYS)처럼 가지치기 대상이 아니었다 - 그대로 두면 설치 기간이 길어질수록
+# attribute가 끝없이 커진다. 똑같이 12개월(작년 같은 달 비교에 필요한 만큼)만 남긴다.
+_CITYWASTE_PRUNED_KEYS = {"음식물쓰레기 정산금액", "음식물쓰레기 배출량", "음식물쓰레기 배출건수"}
+# 이번 달 행의 배출량/배출건수/최근배출량은 citywaste.py의 실시간 API 호출이
+# 실패하면(네트워크 오류 등) 그 자체로 아예 안 들어있다 - row.get(...)이 그냥 None을
+# 돌려주는데, 이걸 "정말 0건/0kg"으로 착각해 덮어쓰면 안 되니 live_ok=False인 행에서는
+# 이 셋도 정산금액의 pending과 같은 방식으로 헤드라인 값을 보존한다.
+_CITYWASTE_LIVE_KEYS = {"음식물쓰레기 배출량", "음식물쓰레기 배출건수", "음식물쓰레기 최근배출량"}
 
 
 def sync_citywaste_sensors(
@@ -343,12 +352,16 @@ def sync_citywaste_sensors(
     정산금액(final_amount)은 citywaste.py가 이번 달 행을 항상 "아직 정산 전"이라는
     뜻으로 0을 끼워 보낸다(row.get("pending")) - 그 행이 헤드라인 값을 덮어쓰지
     않도록 VnrisaItemSensor.set_value에 pending을 그대로 넘긴다. 배출량/배출건수/
-    최근배출량은 이번 달 것도 실시간 API로 받은 진짜 값이라 pending을 안 준다."""
+    최근배출량은 보통 이번 달 것도 실시간 API로 받은 진짜 값이라 pending을 안 주지만,
+    그 실시간 API 호출 자체가 실패한 행(row.get("live_ok") is False)에서는 이 셋도
+    값이 통째로 비어 있으므로(0건/0kg이 아니라 "이번엔 못 받아옴") 똑같이 pending
+    처리해서 헤드라인의 마지막 성공값을 보존한다."""
     runtime = entry.runtime_data
     new_entities = []
     for row in rows:
         month = row.get("month")
         settlement_pending = bool(row.get("pending"))
+        live_pending = not row.get("live_ok", True)
         items = {
             "음식물쓰레기 정산금액": {
                 "display_name": "음쓰 정산금액 (citywaste)",
@@ -376,7 +389,12 @@ def sync_citywaste_sensors(
             },
         }
         for key, item in items.items():
-            pending = settlement_pending if key == "음식물쓰레기 정산금액" else False
+            if key == "음식물쓰레기 정산금액":
+                pending = settlement_pending
+            elif key in _CITYWASTE_LIVE_KEYS:
+                pending = live_pending
+            else:
+                pending = False
             existing = runtime.citywaste_sensors.get(key)
             if existing is None:
                 category = None if key in _CITYWASTE_PROMINENT_KEYS else EntityCategory.DIAGNOSTIC
@@ -475,7 +493,7 @@ class VnrisaItemSensor(RestoreEntity, SensorEntity):
             # 12개월로 맞춘다 - 안 그러면 매번 fetch_gas_history가 다시 가져오는
             # 24개월(months_back 기본값)치가 그대로 다 쌓여서 사용량만 12개월, 나머지
             # 3개는 24개월로 서로 안 맞았다.
-            if self._key in _USAGE_KEYS or self._key in _GAS_KEYS:
+            if self._key in _USAGE_KEYS or self._key in _GAS_KEYS or self._key in _CITYWASTE_PRUNED_KEYS:
                 _prune_history(self._history, self._latest_month)
             elif self._key in _CITYWASTE_CURRENT_MONTH_ONLY_KEYS:
                 for month in [m for m in self._history if m != self._latest_month]:
