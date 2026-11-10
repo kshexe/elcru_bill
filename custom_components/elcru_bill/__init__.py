@@ -304,7 +304,7 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     months_back = 1 if backfilled else 11
 
     try:
-        rows, unit_price, auto_tag_id, auto_dong, auto_ho = await fetch_citywaste_history(
+        rows, unit_price, _tag_id, _dong, _ho = await fetch_citywaste_history(
             member_id, member_pwd, months_back=months_back
         )
     except CitywasteLoginError as err:
@@ -324,15 +324,11 @@ async def async_refresh_citywaste(hass: HomeAssistant, entry: VnrisaConfigEntry)
     if not backfilled and runtime.citywaste_backfill_store is not None:
         await runtime.citywaste_backfill_store.async_save({"done": True})
     # 실시간 조회(async_refresh_citywaste_live)는 매번 로그인/정산내역 페이지를 다시
-    # 파싱하지 않고 이 runtime 캐시만 쓴다 - 그 값은 되도록 방금 fetch_citywaste_history가
-    # 로그인/페이지에서 직접 뽑아온 실제 값(auto_tag_id/auto_dong/auto_ho)을 쓰고,
-    # 그게 없을 때만(이번 달 들어 정산내역 페이지를 아직 한 번도 못 긁었을 때 등)
-    # 설정(음쓰 설정 화면)에서 사용자가 직접 입력해 저장한 값으로 대체한다 - 전엔
-    # 항상 입력값만 썼어서, 설정에서 동/호를 오타 내면 실시간 조회만 조용히 계속
-    # 실패하고 에러도 안 뜨는 문제가 있었다.
-    tag_id = auto_tag_id or entry.data.get(CONF_CITYWASTE_TAG_ID)
-    dong = auto_dong or entry.data.get(CONF_CITYWASTE_DONG)
-    ho = auto_ho or entry.data.get(CONF_CITYWASTE_HO)
+    # 파싱하지 않고, 설정(음쓰 설정 화면)에서 사용자가 직접 입력해 저장한
+    # 태그인쇄번호/동/호만 그대로 쓴다 - 자동 추출/채움은 없다.
+    tag_id = entry.data.get(CONF_CITYWASTE_TAG_ID)
+    dong = entry.data.get(CONF_CITYWASTE_DONG)
+    ho = entry.data.get(CONF_CITYWASTE_HO)
     if tag_id and dong and ho:
         runtime.citywaste_tag_id, runtime.citywaste_dong, runtime.citywaste_ho = tag_id, dong, ho
     if runtime.citywaste_timestamp_sensor is not None:
