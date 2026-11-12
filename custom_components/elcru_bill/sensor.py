@@ -11,7 +11,7 @@
 거꾸로 되돌리지 않도록.
 
 엔티티의 unique_id는 항목의 "안정적인 key"(예: "전기료 소계")로만 정하고, 화면에
-보이는 이름(표시명, 예: "전기료 소계 (vnrisa)")은 따로 둔다 - 출처 태그를 붙이거나
+보이는 이름(표시명, 예: "전기료 소계(vnrisa)")은 따로 둔다 - 출처 태그를 붙이거나
 표시 문구를 나중에 또 바꾸더라도 entity_id가 안 바뀌어서 history가 안 날아간다.
 
 프로미넌트(기본 카테고리, 기기 카드 상단)로 남는 건 코콤의 전기/가스/수도 사용량
@@ -54,17 +54,17 @@ async def async_setup_entry(
     runtime = entry.runtime_data
     runtime.add_sensor_entities = async_add_entities
 
-    runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각 (vnrisa)", "bill_timestamp")
-    runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각 (GSE)", "gas_timestamp")
+    runtime.bill_timestamp_sensor = VnrisaTimestampSensor(entry, "관리비 조회시각(vnrisa)", "bill_timestamp")
+    runtime.gas_timestamp_sensor = VnrisaTimestampSensor(entry, "도시가스 조회시각(GSE)", "gas_timestamp")
     # 음쓰는 두 스케줄러가 서로 무관하게 따로 도는데(async_refresh_citywaste_live는
     # 월 감지와 무관하게 항상 30분마다, async_refresh_citywaste는 로그인까지 하는
     # 무거운 정산내역 확인이고 그 달이 이미 감지되면 멈춤) 조회시각을 하나로 합쳐두면
     # 실시간 쪼만 계속 돌아도 "정산 확인도 아직 돈다"처럼 보여서 헷갈린다 - 둘로 나눈다.
     runtime.citywaste_timestamp_sensor = VnrisaTimestampSensor(
-        entry, "음쓰 조회시각 (citywaste)", "citywaste_timestamp"
+        entry, "음쓰 조회시각(citywaste)", "citywaste_timestamp"
     )
     runtime.citywaste_settlement_timestamp_sensor = VnrisaTimestampSensor(
-        entry, "음쓰 정산 조회시각 (citywaste)", "citywaste_settlement_timestamp"
+        entry, "음쓰 정산 조회시각(citywaste)", "citywaste_settlement_timestamp"
     )
     async_add_entities(
         [
@@ -82,13 +82,13 @@ def flatten_bill_items(data: dict[str, Any]) -> dict[str, dict[str, Any]]:
     """파싱된 고지서 dict를 {key: {display_name, value, unit, attrs}}로 평탄화.
 
     key는 "전기료 소계"처럼 출처 태그 없는 안정적인 이름(unique_id용), display_name은
-    "전기료 소계 (vnrisa)"처럼 화면에 보이는 이름. usage/meters는 charges와 key가
+    "전기료 소계(vnrisa)"처럼 화면에 보이는 이름. usage/meters는 charges와 key가
     겹칠 수 있어(예: "전기") 접미사를 붙인다.
     """
     items: dict[str, dict[str, Any]] = {}
 
     def add(key: str, value: Any, unit: str | None, attrs: dict[str, Any]) -> None:
-        items[key] = {"display_name": f"{key} (vnrisa)", "value": value, "unit": unit, "attrs": attrs}
+        items[key] = {"display_name": f"{key}(vnrisa)", "value": value, "unit": unit, "attrs": attrs}
 
     for key, value in {**data.get("summary", {}), **data.get("details", {})}.items():
         add(key, value, "원", {})
@@ -143,7 +143,7 @@ def _icon_for_key(key: str) -> str:
 _GAS_KEYS = {"가스 사용량", "가스 청구금액", "가스 납부금액", "가스 계량기 지침"}
 # restore_orphaned_sensors가 citywaste 항목을 복구할 때 쓴다 - 표시명에서 "(citywaste)"
 # 태그만 떼서 vnrisa/GSE처럼 key로 되돌리는 방식은 안 통한다(sync_citywaste_sensors가
-# 쓰는 내부 key, 예: "음식물쓰레기 정산금액"이 표시명, 예: "음쓰 정산금액 (citywaste)"과
+# 쓰는 내부 key, 예: "음식물쓰레기 정산금액"이 표시명, 예: "음쓰 정산금액(citywaste)"과
 # 다름) - 그래서 slugify된 안정적인 unique_id 접미사에서 바로 내부 key로 매핑한다.
 _CITYWASTE_UID_SUFFIX_TO_KEY = {
     f"_{slugify(k)}": k
@@ -160,11 +160,11 @@ _CITYWASTE_UID_SUFFIX_TO_KEY = {
 # 여기서 다르면 복구된 엔티티의 이름이 영원히 어긋난 채로 남는다). sync_citywaste_sensors를
 # 고치면 이것도 같이 고쳐야 한다.
 _CITYWASTE_DISPLAY_NAMES = {
-    "음식물쓰레기 정산금액": "음쓰 정산금액 (citywaste)",
-    "음식물쓰레기 배출량": "음쓰 총 배출량 (citywaste)",
-    "음식물쓰레기 배출건수": "음쓰 배출건수 (citywaste)",
-    "음쓰 kg당 단가": "음쓰 단가 (citywaste)",
-    "음식물쓰레기 최근배출량": "음쓰 최근 배출량 (citywaste)",
+    "음식물쓰레기 정산금액": "음쓰 정산금액(citywaste)",
+    "음식물쓰레기 배출량": "음쓰 총 배출량(citywaste)",
+    "음식물쓰레기 배출건수": "음쓰 배출건수(citywaste)",
+    "음쓰 kg당 단가": "음쓰 단가(citywaste)",
+    "음식물쓰레기 최근배출량": "음쓰 최근 배출량(citywaste)",
 }
 _USAGE_KEYS = {"전기 사용량", "수도 사용량", "가스 사용량"}
 _TAG_RE = re.compile(r"\s*\((?:vnrisa|GSE)\)$")
@@ -260,7 +260,7 @@ async def restore_orphaned_sensors(hass: HomeAssistant, entry: VnrisaConfigEntry
         if key in sensors:
             continue
         tag = "(GSE)" if is_gas else "(vnrisa)"
-        stub_item = {"display_name": f"{key} {tag}", "value": None, "unit": None, "attrs": {}}
+        stub_item = {"display_name": f"{key}{tag}", "value": None, "unit": None, "attrs": {}}
         sensor = VnrisaItemSensor(entry, key, stub_item, None)
         sensor._attr_unique_id = uid  # slugify(key)가 등록된 값과 다를 수 있어 그대로 맞춰씀
         sensors[key] = sensor
@@ -302,25 +302,25 @@ def sync_gas_sensors(entry: VnrisaConfigEntry, rows: list[dict[str, Any]]) -> No
         month = row.get("month")
         items = {
             "가스 사용량": {
-                "display_name": "가스 사용량 (GSE)",
+                "display_name": "가스 사용량(GSE)",
                 "value": row.get("usage_m3"),
                 "unit": "㎥",
                 "attrs": {"검침코드": row.get("meter_status")},
             },
             "가스 청구금액": {
-                "display_name": "가스 청구금액 (GSE)",
+                "display_name": "가스 청구금액(GSE)",
                 "value": row.get("billed_amount"),
                 "unit": "원",
                 "attrs": {},
             },
             "가스 납부금액": {
-                "display_name": "가스 납부금액 (GSE)",
+                "display_name": "가스 납부금액(GSE)",
                 "value": row.get("paid_amount"),
                 "unit": "원",
                 "attrs": {"수납일": row.get("payment_date"), "미납": row.get("unpaid")},
             },
             "가스 계량기 지침": {
-                "display_name": "가스 계량기 지침 (GSE)",
+                "display_name": "가스 계량기 지침(GSE)",
                 "value": row.get("meter_reading"),
                 "unit": "㎥",
                 "attrs": {},
@@ -381,25 +381,25 @@ def sync_citywaste_sensors(
         live_pending = not row.get("live_ok", True)
         items = {
             "음식물쓰레기 정산금액": {
-                "display_name": "음쓰 정산금액 (citywaste)",
+                "display_name": "음쓰 정산금액(citywaste)",
                 "value": row.get("final_amount"),
                 "unit": "원",
                 "attrs": {},
             },
             "음식물쓰레기 배출량": {
-                "display_name": "음쓰 총 배출량 (citywaste)",
+                "display_name": "음쓰 총 배출량(citywaste)",
                 "value": row.get("discharge_kg"),
                 "unit": "kg",
                 "attrs": {},
             },
             "음식물쓰레기 배출건수": {
-                "display_name": "음쓰 배출건수 (citywaste)",
+                "display_name": "음쓰 배출건수(citywaste)",
                 "value": row.get("discharge_count"),
                 "unit": "회",
                 "attrs": {},
             },
             "음식물쓰레기 최근배출량": {
-                "display_name": "음쓰 최근 배출량 (citywaste)",
+                "display_name": "음쓰 최근 배출량(citywaste)",
                 "value": row.get("last_discharge_kg"),
                 "unit": "kg",
                 "attrs": {},
@@ -423,7 +423,7 @@ def sync_citywaste_sensors(
 
     if unit_price is not None:
         key = "음쓰 kg당 단가"
-        item = {"display_name": "음쓰 단가 (citywaste)", "value": unit_price, "unit": "원/kg", "attrs": {}}
+        item = {"display_name": "음쓰 단가(citywaste)", "value": unit_price, "unit": "원/kg", "attrs": {}}
         existing = runtime.citywaste_sensors.get(key)
         if existing is None:
             sensor = VnrisaItemSensor(entry, key, item, None)

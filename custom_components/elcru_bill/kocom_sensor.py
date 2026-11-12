@@ -120,28 +120,42 @@ SENSOR_TYPES = {
         # 값이 "2026-10-19 19:41:00" 같은 문자열이라 state_class를 주면 HA가 숫자형이
         # 아니라고 엔티티 추가 자체를 거부한다(최신 HA에서 강화된 검증) - 원본
         # kocom_energy에 있던 state_class: measurement를 빼서 고쳤다.
-        "name": "코콤 조회시각 (kocom)",
+        "name": "코콤 조회시각(kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "",
         "icon": "mdi:clock-check-outline",
     },
     "electricity": {
-        "name": "전기 사용량 (kocom)",
+        "name": "전기 현재사용량(kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
         "icon": "mdi:flash",
     },
+    # kwh_to_won 등 다른 데서 에너지 센서로 연동해 쓰기 위한 복제본 - 데이터/로직은
+    # 위 "electricity"와 완전히 동일(base_type으로 그쪽 로직을 그대로 탄다), device_class/
+    # unit_of_measurement만 HA 에너지 대시보드 규격(kWh)에 맞춰 채운다. 코콤 쪽이 월초에
+    # 0으로 리셋되는 "이번달 사용량"이라 이것도 똑같이 매월 초 0으로 리셋됨 - total_increasing은
+    # 그런 주기적 리셋을 전제로 하는 state_class라 문제없음(total과 달리 "리셋 후 다시
+    # 쌓인다"는 걸 HA가 알아서 통계에 반영).
+    "electricity_link": {
+        "name": "전기 현재사용량(연동용)",
+        "base_type": "electricity",
+        "device_class": "energy",
+        "unit_of_measurement": "kWh",
+        "state_class": "total_increasing",
+        "icon": "mdi:flash",
+    },
     "gas": {
-        "name": "가스 사용량 (kocom)",
+        "name": "가스 사용량(kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
         "icon": "mdi:fire",
     },
     "water": {
-        "name": "수도 사용량 (kocom)",
+        "name": "수도 사용량(kocom)",
         "device_class": "",
         "unit_of_measurement": "",
         "state_class": "total_increasing",
@@ -232,6 +246,10 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
         self._entry_id = entry.entry_id
         self._sensor_type = sensor_type
+        # base_type: 데이터 조회/계산 로직이 보는 "실제" 종류 - 보통 sensor_type과 같지만,
+        # 연동용 복제 센서처럼 이름/unit/device_class만 다르고 로직은 기존 센서를 그대로
+        # 타야 하는 경우 SENSOR_TYPES에 명시해서 분리한다.
+        self._base_type = sensor_data.get("base_type", sensor_type)
         self._attr_name = sensor_data["name"]
         self._attr_unique_id = f"{entry.entry_id}_kocom_{sensor_type}"
         self._attr_device_class = sensor_data["device_class"] or None
@@ -239,8 +257,8 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._attr_state_class = sensor_data["state_class"] or None
         self._attr_icon = sensor_data["icon"]
         self._attr_device_info = _device_info(entry)
-        self._attr_entity_category = None if sensor_type in _PROMINENT_TYPES else EntityCategory.DIAGNOSTIC
-        if sensor_type in _PROMINENT_TYPES:
+        self._attr_entity_category = None if self._base_type in _PROMINENT_TYPES else EntityCategory.DIAGNOSTIC
+        if self._base_type in _PROMINENT_TYPES:
             # 값 자체를 반올림해서 정수로 주지만, 프론트엔드가 device_class 기준으로
             # 소수점을 다시 붙여서 보여줄 수 있어 표시 정밀도도 0으로 고정한다.
             self._attr_suggested_display_precision = 0
@@ -263,7 +281,7 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     async def async_added_to_hass(self) -> None:
         await super().async_added_to_hass()
-        if self._sensor_type not in _PROMINENT_TYPES:
+        if self._base_type not in _PROMINENT_TYPES:
             return
 
         last_state = await self.async_get_last_state()
@@ -286,16 +304,16 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         self._handle_coordinator_update()
 
     def _handle_coordinator_update(self) -> None:
-        if self._sensor_type in _PROMINENT_TYPES and self.coordinator.data:
+        if self._base_type in _PROMINENT_TYPES and self.coordinator.data:
             for month_key, usage_key in (
-                ("last_month", f"{self._sensor_type}_usage_last_month"),
-                ("two_months_ago", f"{self._sensor_type}_usage_two_months_ago"),
+                ("last_month", f"{self._base_type}_usage_last_month"),
+                ("two_months_ago", f"{self._base_type}_usage_two_months_ago"),
             ):
                 month = _normalize_month(self.coordinator.data.get(month_key))
                 usage = self.coordinator.data.get(usage_key)
                 if month and usage is not None:
                     self._history[month] = _round_half_up(usage)
-            if self._sensor_type == "electricity" and self.hass is not None:
+            if self._base_type == "electricity" and self.hass is not None:
                 # vnrisa 엔티티는 플랫폼 설정 순서상 이 코콤 센서보다 늦게 만들어져서,
                 # async_added_to_hass 시점엔 아직 없을 수 있다 - 매 폴링마다(또는
                 # async_added_to_hass가 수동으로 한 번 불러주는 시점에) 다시 시도하면
@@ -312,14 +330,14 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
         current_usage = None
         try:
             if not self.coordinator.data:
-                if self._sensor_type == "energy":
+                if self._base_type == "energy":
                     return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
                 return None
 
-            if self._sensor_type == "energy":
+            if self._base_type == "energy":
                 return datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-            if self._sensor_type == "electricity":
+            if self._base_type == "electricity":
                 current_usage = self.coordinator.data.get("electricity_usage_this_month")
                 this_month = self.coordinator.data.get("this_month")
 
@@ -346,9 +364,9 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
                 self._previous_electricity_this_month = this_month
                 return _round_half_up(current_usage)
 
-            elif self._sensor_type == "gas":
+            elif self._base_type == "gas":
                 current_usage = self.coordinator.data.get("gas_usage_this_month")
-            elif self._sensor_type == "water":
+            elif self._base_type == "water":
                 current_usage = self.coordinator.data.get("water_usage_this_month")
         except Exception as e:  # noqa: BLE001
             _LOGGER.error("%s 센서 데이터 처리 중 오류 발생: %s", self._sensor_type, e)
@@ -358,9 +376,9 @@ class KocomSensor(CoordinatorEntity, RestoreEntity, SensorEntity):
 
     @property
     def extra_state_attributes(self) -> dict:
-        if self._sensor_type == "energy":
+        if self._base_type == "energy":
             return self.coordinator.data or {}
-        if self._sensor_type not in _PROMINENT_TYPES:
+        if self._base_type not in _PROMINENT_TYPES:
             return {}
 
         attrs: dict = {"history": dict(sorted(self._history.items()))}
@@ -403,7 +421,7 @@ class KocomUsageHistorySensor(CoordinatorEntity, SensorEntity):
         self._source = source
         self._kind = kind
         label = _HISTORY_KIND_LABELS[kind]
-        self._attr_name = f"{_HISTORY_KOCOM_LABELS[sensor_type]} {label} (kocom)"
+        self._attr_name = f"{_HISTORY_KOCOM_LABELS[sensor_type]} {label}(kocom)"
         self._attr_unique_id = f"{entry.entry_id}_kocom_{sensor_type}_{kind}"
         self._attr_native_unit_of_measurement = source._attr_native_unit_of_measurement
         self._attr_icon = source._attr_icon
