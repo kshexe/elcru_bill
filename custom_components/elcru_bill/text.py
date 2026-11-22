@@ -1,8 +1,14 @@
 """고지서 링크: 카카오 알림톡의 "상세내역 조회" 버튼을 눌러서 연 관리비 고지서 주소.
 
-값을 넣는 즉시 조회해서 sensor.py의 센서에 반영한다 - 별도 "저장"/"조회" 버튼 없음.
+여기 입력한 값은 바로 조회하지 않고 대기(staging)만 한다 - 실제 조회는 button.py의
+"고지서 조회" 버튼을 눌러야 일어난다(2026-11-22. 붙여넣기 중 글자가 빠지거나 자동완성
+으로 잘못된 값이 들어갔는데 입력 즉시 조회해버리면 실패 원인을 알아보기 전에 이미
+엉뚱한 값으로 조회가 끝나있어서, 입력과 조회를 분리했다). 조회 버튼을 누르면 성공/
+실패와 무관하게 이 입력칸은 빈 값으로 돌아간다(button.py) - 지난달 링크가 그대로
+남아있어서 "이미 확인했다"고 착각하는 걸 막기 위함.
+
 실제 조회+센서 반영+재시작용 저장 로직은 __init__.py의 async_refresh_bill에 있고,
-여기선 그 함수를 호출만 한다(재시작 시 자동 재조회와 같은 코드를 쓰기 위함).
+button.py가 그 함수를 호출한다(재시작 시 자동 재조회와 같은 코드를 쓰기 위함).
 
 도시가스(GSE) 아이디/비밀번호는 여기가 아니라 통합 설정(최초 설치 시 config flow)에서
 입력한다 - __init__.py의 async_refresh_gas가 그걸 읽어서 매일 자동으로 재조회한다.
@@ -17,7 +23,7 @@ from homeassistant.core import HomeAssistant
 from homeassistant.helpers.entity_platform import AddEntitiesCallback
 from homeassistant.helpers.restore_state import RestoreEntity
 
-from . import VnrisaConfigEntry, async_refresh_bill
+from . import VnrisaConfigEntry
 from .const import DOMAIN
 
 _LOGGER = logging.getLogger(__name__)
@@ -68,5 +74,3 @@ class VnrisaLinkText(TextEntity, RestoreEntity):
         self._attr_native_value = value
         self._runtime.url = value
         self.async_write_ha_state()
-        if value:
-            await async_refresh_bill(self.hass, self._entry, value)
