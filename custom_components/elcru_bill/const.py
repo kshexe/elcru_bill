@@ -25,7 +25,7 @@ kocom_util.py)는 원본 그대로 포팅 - 바이트 오프라인 파싱 로직
 """
 
 DOMAIN = "elcru_bill"
-PLATFORMS = ["sensor", "text"]
+PLATFORMS = ["sensor", "text", "button"]
 
 CONF_GAS_MEMBER_ID = "gas_member_id"
 CONF_GAS_MEMBER_PWD = "gas_member_pwd"
